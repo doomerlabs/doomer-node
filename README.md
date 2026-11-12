@@ -93,26 +93,9 @@ doomer review --wait none
 doomer review get REVIEW_ID --workspace
 ```
 
-Reviews are delegated to the installed Go CLI. The manager requests
-Quick/Look Closer with Deep disabled. Anonymous reviews use a private,
-persistent service-specific identity;
-`DOOMER_TOKEN` can explicitly supply another credential.
-
-Without saved approval, manual review prompts before uploading. A human may use
-`--approve-upload` to approve that single invocation. Noninteractive review
-without approval fails before any network request.
-
-Snapshots include tracked and non-ignored untracked files, including staged and
-unstaged edits. Git metadata is excluded. Symlinks, submodules, Git LFS pointers,
-sparse checkouts, and merge conflicts are rejected. Limits and capture behavior
-are defined by the Go CLI. Source snapshots and the patch are
-uploaded; do not include secrets in reviewed source. Review never modifies the
-working tree or Git index.
-
-The default baseline is the merge base with `origin/HEAD`, `main`, or `master`,
-falling back to `HEAD`. `--base` selects another local commit. Quick readiness is
-independent of aggregate review status. JSON results use the Go CLI's output
-format. Manual review submission and result handling follow that CLI.
+Run reviews directly with the installed Go CLI, `doomer`. The Node manager
+only installs and configures Doomer; it does not run or delegate reviews.
+Use `doomer review --help` for review options, upload permission, and result handling.
 
 ## Hooks and maintenance
 

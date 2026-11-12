@@ -2,9 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile, lstat, symlink, rename, rm } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { resolveAPI } from './api.js';
-import { paths, nativePath, hash, run, readState, changeState, readJSON, writeJSON, atomicWrite, locked, exists } from './system.js';
-import { hasUploadApproval } from './permissions.js';
+import { nativePath, hash, run, readState, changeState, atomicWrite, exists } from './system.js';
 
 const RELEASES = 'https://downloads.doomer.ai/cli/';
 
@@ -101,45 +99,4 @@ export async function installNative({ update = false } = {}) {
   const archive = await download(asset.url, 64 * 1024 * 1024);
   if (hash(archive) !== asset.sha256) throw new Error('Native release checksum mismatch.');
   return installVersion(archiveBinary(archive), manifest.version, 'stable');
-}
-
-export function nativeContext(state, agent = 'manual', api) {
-  if (!state.native?.path) throw new Error('The Go CLI is missing. Run npx @doomerlabs/doomer onboard.');
-  const service = resolveAPI(api, state.api);
-  const profile = `node-${agent}`;
-  const config = join(paths().home, 'native-state');
-  return { binary: state.native.path, api: service, profile, config,
-    root: join(config, 'watch', hash(`${service}\0${profile}`)),
-    env: { ...process.env, DOOMER_CONFIG_DIR: config },
-    args: ['--api-url', service, '--profile', profile],
-  };
-}
-
-export async function syncNativeConsent(agent, api, repo, oneReview = false) {
-  let state = await readState();
-  const context = nativeContext(state, agent, api);
-  if (!oneReview && !hasUploadApproval(state, context.api, repo, agent === 'manual' ? undefined : agent)) throw new Error('Doomer upload approval is required; run npx @doomerlabs/doomer onboard.');
-  state = await changeState(s => {
-    s.identities ??= {};
-    s.identities[context.api] ||= `doomer_anon_${randomBytes(32).toString('base64url')}`;
-  });
-  const token = process.env.DOOMER_TOKEN || state.identities[context.api];
-  const globals = state.grants.filter(g => g.api === context.api && g.scope === 'global');
-  const scoped = state.grants.filter(g => g.api === context.api && g.repo && (agent === 'manual' || g.agents?.includes(agent)));
-  const grant = globals[0] || scoped.find(g => g.repo === repo);
-  await locked(join(context.config, 'sync'), async () => {
-    // The Go CLI's native credential store is isolated from the old installer.
-    const credentials = await readJSON(join(context.config, 'config.json'), {});
-    credentials.auths ??= {};
-    credentials.auths[`auth:v2:${Buffer.byteLength(context.api)}:${context.api}:${context.profile}`] = { token };
-    await writeJSON(join(context.config, 'config.json'), credentials);
-    if (!oneReview) await writeJSON(join(context.root, 'config.json'), {
-      version: 1, api_url: context.api, profile: context.profile, account_key: hash(token),
-      explicit_consent: true, all_repositories: globals.length > 0,
-      all_changes: true,
-      directories: globals.length ? [] : scoped.map(g => g.repo),
-      consented_at: grant.approvedAt,
-    });
-  });
-  return context;
 }

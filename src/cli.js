@@ -2,7 +2,6 @@ import { parseArgs } from 'node:util';
 import { readState, changeState, metadata, paths } from './system.js';
 import { setup, doctor, update, selectAgents } from './setup.js';
 import { installHooks } from './hooks.js';
-import { review } from './review.js';
 import { installNative } from './native.js';
 import { resolveAPI } from './api.js';
 import { uninstall } from './uninstall.js';
@@ -14,7 +13,6 @@ Usage: npx @doomerlabs/doomer <command>
 
   install                      Install CLI + skill and onboard selected agents
   onboard                      Complete setup after installing the skill directly
-  review [get ID]              Delegate a review to the Go CLI
   install-hooks                Install or repair agent hooks
   refresh-hooks                Reload hooks in a running local Codex server
   doctor                       Check CLI, skill and hook readiness (no changes)
@@ -27,14 +25,6 @@ Setup options:
   --no-hooks                   Install for standalone reviews
   --approve-uploads            Approve all Doomer review uploads to this service
   --from PATH.tgz              Install a local npm tarball before publication
-
-Review options:
-  --repo PATH                  Git worktree (default: current directory)
-  --base REF                   Baseline (default: merge base with main/master)
-  --approve-upload             Explicit approval for this one review
-  --wait none                  Submit without waiting
-  --timeout SECONDS            Quick result wait limit (default: 60)
-  --show-diff                  Print the exact submitted diff to stderr
   --json                       Machine-readable result
   --api-url URL                Service (or DOOMER_API_URL; default: https://doomer.ai/api)
 
@@ -44,18 +34,15 @@ Node.js 22+ and Git required. Setup does not grant native hook trust.
 export async function main(args) {
   const { values: options, positionals } = parseArgs({ args, allowPositionals: true, strict: true, options: {
     help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
-    agent: { type: 'string' }, repo: { type: 'string', default: '.' }, base: { type: 'string' },
-    'no-hooks': { type: 'boolean' }, 'approve-upload': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
+    agent: { type: 'string' },
+    'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
     json: { type: 'boolean' }, from: { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
-    wait: { type: 'string' }, timeout: { type: 'string' }, session: { type: 'string' }, owner: { type: 'string' }, 'show-diff': { type: 'boolean' },
   } });
   if (options.home) process.env.DOOMER_HOME = options.home;
   if (options.version) { console.log(metadata.version); return 0; }
   if (options.help || !positionals.length) { console.log(HELP); return 0; }
-  if (options.timeout !== undefined && (!Number.isFinite(Number(options.timeout)) || Number(options.timeout) <= 0 || Number(options.timeout) > 1800)) throw new Error('--timeout must be between 0 and 1800 seconds.');
-  if (options.wait !== undefined && options.wait !== 'none' && options.wait !== 'quick') throw new Error('--wait must be quick or none.');
-  const [command, subcommand, id, ...extra] = positionals;
-  if (extra.length || (command !== 'review' && subcommand) || (command === 'review' && subcommand && (subcommand !== 'get' || !id))) throw new Error('Unexpected command arguments. Run doomer --help.');
+  const [command, ...extra] = positionals;
+  if (extra.length) throw new Error('Unexpected command arguments. Run npx @doomerlabs/doomer --help.');
   switch (command) {
     case 'install':
     case 'onboard': {
@@ -114,16 +101,12 @@ export async function main(args) {
       }
       return 0;
     }
-    case 'review': {
-      await review(options, subcommand === 'get' ? id : undefined);
-      return 0;
-    }
     case 'revoke': {
       const service = resolveAPI(options['api-url'], (await readState()).api);
       await changeState(s => { s.grants = s.grants.filter(g => g.api !== service); });
       console.log(`Removed saved upload approval for ${new URL(service).origin}.`);
       return 0;
     }
-    default: throw new Error(`Unknown command ${command}. Run doomer --help.`);
+    default: throw new Error(`Unknown command ${command}. Run npx @doomerlabs/doomer --help.`);
   }
 }
