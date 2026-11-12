@@ -6,6 +6,7 @@ import { review } from './review.js';
 import { installNative, nativeHook, stopNativeWatchers } from './native.js';
 import { endpoint } from './api.js';
 import { uninstall } from './uninstall.js';
+import { reloadCodexHooks, reloadMessage } from './codex.js';
 
 const HELP = `Doomer manager ${metadata.version}
 
@@ -15,6 +16,7 @@ Usage: npx @doomerlabs/doomer <command>
   onboard                      Complete setup after installing the skill directly
   review [get ID]              Delegate a review to the Go CLI
   install-hooks                Install or repair agent hooks
+  refresh-hooks                Reload hooks in a running local Codex server
   doctor                       Check CLI, skill and hook readiness (no changes)
   update                       Update CLI + skill and repair configured hooks
   uninstall                    Remove managed hooks, skill, CLI and local data
@@ -88,8 +90,14 @@ export async function main(args) {
         console.log(`${agent}: ${result.changed ? 'installed' : 'already configured'} (${result.file})`);
       }
       await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; });
-      console.log('Review and trust the hooks in your agent. Installation does not prove activation.');
+      if(selected.includes('codex')) console.log(reloadMessage(await reloadCodexHooks()));
+      else console.log('Review and trust the hooks in your agent. Installation does not prove activation.');
       return 0;
+    }
+    case 'refresh-hooks': {
+      const result=await reloadCodexHooks();
+      console.log(options.json ? JSON.stringify(result,null,2) : reloadMessage(result));
+      return result.reloaded ? 0 : 1;
     }
     case 'update': {
       const result = await update(options);
@@ -103,6 +111,7 @@ export async function main(args) {
         console.log('Doomer uninstalled. Managed hooks, skills and local installation data removed.');
         if(result.removedExecutable)console.log(`Removed ${result.removedExecutable}`);
         if(result.preservedExecutable)console.log(`Preserved replacement executable: ${result.preservedExecutable}`);
+        if(result.codexReload)console.log(result.codexReload.reloaded ? 'Codex reloaded the removed hooks without restarting.' : reloadMessage(result.codexReload));
       }
       return 0;
     }

@@ -5,6 +5,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { agents, hookFile, globalSkillPaths, removeHooks } from './hooks.js';
 import { paths, packageRoot, readState, readJSON, writeJSON, changeState, exists, locked, run, hash } from './system.js';
 import { endpoint } from './api.js';
+import { reloadCodexHooks } from './codex.js';
 
 const inside = (root, path) => {
   if (typeof path !== 'string' || !isAbsolute(path)) return false;
@@ -87,6 +88,7 @@ export async function uninstall() {
   }
   const hookFiles=[...new Set([...(state.hookFiles||[]),...agents.map(hookFile)])];
   for (const file of hookFiles) if(await removeHooks(file)) result.removedHooks.push(file);
+  if(result.removedHooks.some(file=>basename(file)==='hooks.json'))result.codexReload=await reloadCodexHooks();
   if(homeExists)await stopWatchers(p.home,state);
   const skills=[...new Set([...(state.skillPaths||[]),...globalSkillPaths()])];
   // Remove per-agent links before the shared canonical copy.

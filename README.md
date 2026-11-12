@@ -110,6 +110,7 @@ format. Manual review submission and result handling follow that CLI.
 ```sh
 npx @doomerlabs/doomer doctor --json
 npx @doomerlabs/doomer install-hooks --agent claude,codex
+npx @doomerlabs/doomer refresh-hooks
 npx @doomerlabs/doomer update
 npx @doomerlabs/doomer revoke
 ```
@@ -131,8 +132,13 @@ only this Node installer's old tool-hook entries, preserving other hooks.
 
 Clean trees with no diff do not submit reviews. Hooks never invent
 approval or modify native trust. Review/trust the definitions through the agent's
-native controls after restarting the agent. Setup prints the exact hook file
-path; an already running Codex TUI may still show its startup configuration.
+native controls. Setup prints the exact hook file path and asks the running
+local Codex server to reload it without restarting the session. This uses the
+existing Unix control socket and an empty `config/batchWrite` request with
+`reloadUserConfig: true`; it does not change settings or trust decisions.
+`refresh-hooks` runs the same operation on demand. If no compatible local server
+is reachable, the CLI explicitly reports that a restart is needed.
+`DOOMER_CODEX_SOCKET` can specify a non-default local control socket.
 Cross-repository tool edits are not
 tracked automatically in this initial version; review each edited repository
 manually. Missing approval, timeouts, and failures must be reported as incomplete
@@ -163,7 +169,8 @@ new global `doomer` skill, and deletes the private runtimes, source snapshots,
 credentials, and local installation state. It does not remove hosted reviews,
 the old `doomer-review` skill, unrelated agent settings, or recovery backups.
 If you replaced the global command yourself, uninstall reports and preserves
-that replacement. Restart your agent to discard its cached hook definitions.
+that replacement. Uninstall reloads removed hooks in a reachable local Codex
+server and reports when a restart is required instead.
 
 Private state, source baselines, and runtime versions live in
 `${XDG_DATA_HOME:-~/.local/share}/doomer-node`. `DOOMER_HOME` changes this root;
@@ -180,8 +187,9 @@ npm run check
 npm pack --dry-run
 ```
 
-No npm runtime dependencies or install scripts. Tests use temporary Git repositories,
-agent settings, and fake npm/native executables. They do not upload to
+The `ws` runtime dependency provides the Unix-socket WebSocket connection to
+Codex. There are no package install scripts. Tests use temporary Git repositories,
+agent settings, mock Codex WebSocket servers, and fake npm/native executables. They do not upload to
 the live service or alter your CLI. npm and skills.sh provide their own metrics;
 no additional Doomer installation telemetry is implemented yet. Live-service and
 native-agent acceptance testing remain release checks.

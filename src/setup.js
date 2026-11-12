@@ -7,6 +7,7 @@ import { paths, metadata, packageRoot, hash, npm, run, readState, changeState, e
 import { endpoint } from './api.js';
 import { uploadPrompt, acceptsUploadAnswer } from './permissions.js';
 import { installNative } from './native.js';
+import { reloadCodexHooks, reloadMessage } from './codex.js';
 
 export async function question(text) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error('Interactive setup requires a terminal. Pass --agent claude,codex or --no-hooks.');
@@ -163,7 +164,13 @@ export async function setup(options, { forceSkill = true } = {}) {
     await installSkill(selected);
   }
   await configure(selected, installed.hookLauncher, options);
-  return { ...installed, ...command, agents: selected, ...(await doctor()) };
+  const result = { ...installed, ...command, agents: selected, ...(await doctor()) };
+  if(selected.includes('codex')) {
+    result.codexReload=await reloadCodexHooks();
+    const message=reloadMessage(result.codexReload);
+    result.next=result.ready ? message : `${result.next} ${message}`;
+  }
+  return result;
 }
 
 export async function doctor() {
@@ -180,7 +187,7 @@ export async function doctor() {
     catch { /* Missing or replaced global command. */ }
     if (process.platform === 'win32') executable = await exists(state.executable);
   }
-  return { ready: cli && native && automaticReviews && executable && skill && hooks.every(h => h.configured && h.enabled), cli, native, automaticReviews, nativeVersion:state.native?.version, version: state.cliVersion || null, executable: state.executable || null, commandInstalled: executable, skill: skill ? 'installed' : 'missing', hooks, uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })), next: !cli || !native || !executable || !skill ? 'npx @doomerlabs/doomer onboard' : !automaticReviews ? 'Install a Go CLI with --all-changes support using DOOMER_NATIVE_BINARY, then rerun onboard.' : hooks.some(h => !h.configured) ? 'npx @doomerlabs/doomer install-hooks' : hooks.some(h => !h.enabled) ? 'Enable hooks in your agent settings.' : 'Restart your agent, then review and trust the Doomer hooks in /hooks. Configuration on disk does not verify activation.' };
+  return { ready: cli && native && automaticReviews && executable && skill && hooks.every(h => h.configured && h.enabled), cli, native, automaticReviews, nativeVersion:state.native?.version, version: state.cliVersion || null, executable: state.executable || null, commandInstalled: executable, skill: skill ? 'installed' : 'missing', hooks, uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })), next: !cli || !native || !executable || !skill ? 'npx @doomerlabs/doomer onboard' : !automaticReviews ? 'Install a Go CLI with --all-changes support using DOOMER_NATIVE_BINARY, then rerun onboard.' : hooks.some(h => !h.configured) ? 'npx @doomerlabs/doomer install-hooks' : hooks.some(h => !h.enabled) ? 'Enable hooks in your agent settings.' : 'Review and trust the Doomer hooks in /hooks. If they are missing, run npx @doomerlabs/doomer refresh-hooks. Configuration on disk does not verify activation.' };
 }
 
 export async function update(options) {
@@ -193,5 +200,11 @@ export async function update(options) {
   const selected = (await readState()).agents;
   await installSkill(selected);
   for (const agent of selected) await installHooks(agent, result.hookLauncher);
-  return { ...result, ...command, version, ...(await doctor()) };
+  const updated = { ...result, ...command, version, ...(await doctor()) };
+  if(selected.includes('codex')) {
+    updated.codexReload=await reloadCodexHooks();
+    const message=reloadMessage(updated.codexReload);
+    updated.next=updated.ready ? message : `${updated.next} ${message}`;
+  }
+  return updated;
 }
