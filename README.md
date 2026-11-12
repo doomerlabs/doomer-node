@@ -40,8 +40,8 @@ verifies its archive checksum. It installs versioned executables beside a `~/.lo
 example `doomer-2026.11.12.1`. Updates atomically switch the symlink, so running
 watches finish on the old executable while new watches use the new one.
 For a development build, set `DOOMER_NATIVE_BINARY` to the Go executable you
-built. The installer gives local builds a version-and-content filename in `~/.local/bin`
-and points `doomer` at it.
+built. The installer saves local builds as `~/.local/bin/doomer-dev` and points
+`doomer` at that file. Reinstalling atomically replaces `doomer-dev`.
 
 The integration requires a Go build with the foreground `watch` command and `watch agent-hook`, on the
 `feat/watch-all-changes` branch until released. An older stable release can run

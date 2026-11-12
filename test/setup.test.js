@@ -44,7 +44,7 @@ else process.exit(1);
   assert.equal(state.executable, join(bin, 'doomer'));
   assert.equal((await exec(state.executable, ['--version'], { env })).stdout.trim(), 'doomer 2026.11.10.3');
   assert.equal((await lstat(state.executable)).isSymbolicLink(), true);
-  assert.match(state.native.path, /\/doomer-2026\.11\.10\.3-[a-f0-9]{12}$/);
+  assert.equal(state.native.path, join(bin, 'doomer-dev'));
   assert.equal((await lstat(state.native.path)).isFile(), true);
   const hooks = JSON.parse(await readFile(join(codex, 'hooks.json')));
   assert.equal(hooks.trust, 'keep'); assert.equal(hooks.hooks.Stop[0].hooks[0].command, 'echo keep');

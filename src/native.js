@@ -67,11 +67,12 @@ async function activateNative(native) {
 
 async function installVersion(binary, version, source) {
   const sha256 = hash(binary);
-  const label = source === 'local' ? /^doomer\s+([a-z0-9][a-z0-9._-]*)/i.exec(version)?.[1] : version;
-  if (!label || !/^[a-z0-9][a-z0-9._-]*$/i.test(label)) throw new Error('Invalid native CLI version.');
-  const suffix = source === 'local' ? `${label}-${sha256.slice(0, 12)}` : label;
+  const suffix = source === 'local' ? 'dev' : version;
+  if (!/^[a-z0-9][a-z0-9._-]*$/i.test(suffix)) throw new Error('Invalid native CLI version.');
   const path = join(dirname(nativePath()), `doomer-${suffix}`);
-  if (await exists(path)) {
+  if (source === 'local') {
+    await atomicWrite(path, binary, 0o755);
+  } else if (await exists(path)) {
     if (!(await lstat(path)).isFile() || hash(await readFile(path)) !== sha256) throw new Error(`Installed version differs: ${path}`);
   } else await atomicWrite(path, binary, 0o755);
   const reported = (await run(path, ['--version'])).toString().trim();

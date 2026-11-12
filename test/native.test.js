@@ -11,14 +11,14 @@ test('native archive supports the published ./doomer path and rejects symlinks',
   assert.throws(()=>archiveBinary(archive()),/Invalid native release executable/);
 });
 
-import { mkdtemp, writeFile, readFile, readlink, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, readlink, rm, open } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { exec } from './helpers.js';
 
-test('switching versions preserves a running watch and the previous executable', async t => {
+test('replacing doomer-dev preserves a running watch and its open executable', async t => {
   const home = await mkdtemp(join(tmpdir(), 'doomer-version-'));
   t.after(() => rm(home, { recursive: true, force: true }));
   const source = join(home, 'source');
@@ -28,14 +28,18 @@ test('switching versions preserves a running watch and the previous executable',
   await writeFile(source, script('first'), { mode: 0o755 });
   const first = await install();
   const original = await readFile(first.path);
+  const previous = await open(first.path);
+  t.after(() => previous.close());
   const running = spawn(first.executable, ['--hold'], { env });
   const closed = once(running, 'close');
   t.after(async () => { if (running.exitCode === null) running.kill(); await closed; });
   await once(running.stdout, 'data');
   await writeFile(source, script('second'), { mode: 0o755 });
   const second = await install();
-  assert.notEqual(first.path, second.path);
+  assert.equal(first.path, second.path);
+  assert.equal(basename(second.path), 'doomer-dev');
   assert.equal(await readlink(second.executable), basename(second.path));
-  assert.deepEqual(await readFile(first.path), original);
+  assert.deepEqual(await previous.readFile(), original);
+  assert.notDeepEqual(await readFile(second.path), original);
   assert.equal(running.exitCode, null);
 });
