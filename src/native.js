@@ -47,6 +47,11 @@ export function archiveBinary(archive) {
   return binary;
 }
 
+async function supportsDirectHooks(binary) {
+  try { return (await run(binary, ['watch', 'agent-hook', '--help'])).toString().includes('--manager-home'); }
+  catch { return false; }
+}
+
 export async function installNative({ update = false } = {}) {
   const state = await readState();
   const target = join(paths().bin, 'doomer-go');
@@ -57,8 +62,9 @@ export async function installNative({ update = false } = {}) {
     await chmod(target, 0o755);
     const version = (await run(target, ['--version'])).toString().trim();
     const allChanges = (await run(target, ['watch','--help'])).toString().includes('--all-changes');
-    await changeState(s => { s.native = { path: target, version, source: 'local', allChanges }; });
-    return { path: target, version, allChanges };
+    const directHooks = await supportsDirectHooks(target);
+    await changeState(s => { s.native = { path: target, version, source: 'local', allChanges, directHooks }; });
+    return { path: target, version, allChanges, directHooks };
   }
   if (!update && state.native?.path === target && await exists(target)) return state.native;
   const platform = `${process.platform}_${{ x64: 'amd64', arm64: 'arm64' }[process.arch] || 'unsupported'}`;
@@ -74,7 +80,7 @@ export async function installNative({ update = false } = {}) {
   const version = (await run(target, ['--version'])).toString().trim();
   if (!version.includes(manifest.version)) throw new Error('Native CLI version does not match the release manifest.');
   const allChanges = (await run(target, ['watch','--help'])).toString().includes('--all-changes');
-  const native = { path: target, version: manifest.version, sha256: hash(binary), source: 'stable', allChanges };
+  const native = { path: target, version: manifest.version, sha256: hash(binary), source: 'stable', allChanges, directHooks: await supportsDirectHooks(target) };
   await changeState(s => { s.native = native; });
   return native;
 }

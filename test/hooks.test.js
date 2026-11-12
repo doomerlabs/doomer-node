@@ -16,6 +16,11 @@ test('hook repair is idempotent and preserves old Doomer, unrelated hooks, permi
   assert.deepEqual(next.hooks.Stop[0], original.hooks.Stop[0]);
   assert.match(hookCommand('claude', "/a/quote'/cli.js"), /'"'"'/);
   assert.equal(original.hooks.Stop.length, 1);
+  const command = next.hooks.Stop[1].hooks[0].command;
+  assert.match(command, /watch agent-hook/);
+  assert.match(command, /--manager-home=/);
+  assert.ok(!command.includes(process.execPath));
+  assert.ok(!command.includes('hook.cjs'));
   assert.deepEqual(next.hooks.PreToolUse,[{matcher:'.*',hooks:[{command:'echo keep tool hook'}]}]);
   assert.equal(next.hooks.PostToolUse,undefined);
 });

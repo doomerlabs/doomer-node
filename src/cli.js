@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
-import { readState, changeState, metadata, paths, exists } from './system.js';
-import { setup, doctor, update, selectAgents, installCLI } from './setup.js';
+import { readState, changeState, metadata, paths } from './system.js';
+import { setup, doctor, update, selectAgents } from './setup.js';
 import { installHooks } from './hooks.js';
 import { review } from './review.js';
 import { installNative, nativeHook, stopNativeWatchers } from './native.js';
@@ -82,11 +82,10 @@ export async function main(args) {
     }
     case 'install-hooks': {
       const selected = await selectAgents(options);
-      const state = await readState();
-      const runtime = state.hookLauncher && await exists(state.hookLauncher) ? state.hookLauncher : (await installCLI({ from: options.from })).hookLauncher;
-      await installNative();
+      const native = await installNative();
+      if (!native.directHooks) throw new Error('The Go CLI needs direct agent-hook support. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
       for (const agent of selected) {
-        const result = await installHooks(agent, runtime);
+        const result = await installHooks(agent, native.path);
         console.log(`${agent}: ${result.changed ? 'installed' : 'already configured'} (${result.file})`);
       }
       await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; });

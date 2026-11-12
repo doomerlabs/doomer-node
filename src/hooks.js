@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { atomicWrite, entry, quote, readJSON, locked, paths, changeState } from './system.js';
+import { atomicWrite, quote, readJSON, locked, paths, changeState } from './system.js';
 
 export const agents = ['claude', 'codex'];
 export const events = ['UserPromptSubmit', 'Stop'];
@@ -13,13 +13,13 @@ export function hookFile(agent) {
   if (agent === 'codex') return join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'hooks.json');
   throw new Error(`Unsupported agent ${agent}. Choose claude or codex.`);
 }
-export function hookCommand(agent, executable = entry) {
+export function hookCommand(agent, executable = join(paths().bin, 'doomer-go')) {
   if (process.platform === 'win32') {
-    if (/["%\r\n]/.test(process.execPath + executable)) throw new Error('Unsupported characters in Windows installation path');
+    if (/["%\r\n]/.test(executable)) throw new Error('Unsupported characters in Windows installation path');
     if (/["%\r\n]/.test(paths().home)) throw new Error('Unsupported characters in state path');
-    return `"${process.execPath}" "${executable}" hook --agent=${agent} ${marker} --home="${paths().home}"`;
+    return `"${executable}" watch agent-hook --agent=${agent} ${marker} --manager-home="${paths().home}"`;
   }
-  return `${quote(process.execPath)} ${quote(executable)} hook --agent=${agent} ${marker} --home=${quote(paths().home)}`;
+  return `${quote(executable)} watch agent-hook --agent=${agent} ${marker} --manager-home=${quote(paths().home)}`;
 }
 function object(value) { return value && typeof value === 'object' && !Array.isArray(value); }
 function validate(config) {
@@ -67,7 +67,7 @@ export async function removeHooks(file) {
   });
 }
 
-export function mergeHooks(config, agent, executable = entry) {
+export function mergeHooks(config, agent, executable = join(paths().bin, 'doomer-go')) {
   validate(config);
   const next = structuredClone(config);
   next.hooks ??= {};
@@ -84,7 +84,7 @@ export function mergeHooks(config, agent, executable = entry) {
   }
   return next;
 }
-export async function installHooks(agent, executable = entry) {
+export async function installHooks(agent, executable = join(paths().bin, 'doomer-go')) {
   const file = hookFile(agent);
   await changeState(state => { state.hookFiles = [...new Set([...(state.hookFiles || []), file])]; });
   return locked(file, async () => {
@@ -98,7 +98,7 @@ export async function installHooks(agent, executable = entry) {
     return { agent, file, changed: true };
   });
 }
-export async function checkHooks(agent, executable = entry) {
+export async function checkHooks(agent, executable = join(paths().bin, 'doomer-go')) {
   const file = hookFile(agent);
   try {
     const config = await readJSON(file, {});

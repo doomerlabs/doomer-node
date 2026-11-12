@@ -11,7 +11,7 @@ test('global install replaces the old CLI, installs skills via official CLI, rep
   t.after(() => rm(home, { recursive: true, force: true }));
   const npm = join(home, 'fake-npm.mjs');
   const native = join(home, 'fake-go');
-  await writeFile(native, '#!/usr/bin/env node\nconsole.log(process.argv.includes("--help") ? "--all-changes" : "doomer 2026.11.10.3");\n', {mode:0o755});
+  await writeFile(native, '#!/usr/bin/env node\nconsole.log(process.argv.includes("--help") ? "--all-changes --manager-home" : "doomer 2026.11.10.3");\n', {mode:0o755});
   await writeFile(npm, `
 import { cp, mkdir, writeFile, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -47,7 +47,7 @@ else process.exit(1);
   const hooks = JSON.parse(await readFile(join(codex, 'hooks.json')));
   assert.equal(hooks.trust, 'keep'); assert.equal(hooks.hooks.Stop[0].hooks[0].command, 'echo keep');
   assert.match(hooks.hooks.Stop[1].hooks[0].command, /--owner=doomer-node/);
-  assert.match(hooks.hooks.Stop[1].hooks[0].command, /bin\/hook\.cjs/);
+  assert.match(hooks.hooks.Stop[1].hooks[0].command, /bin\/doomer-go/);
   assert.equal((await exec(process.execPath, [state.hookLauncher, '--version'], { env })).stdout.trim(), '0.1.0');
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
   const calls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);

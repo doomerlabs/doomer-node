@@ -41,7 +41,7 @@ verifies its archive checksum. It keeps the Go executable privately as
 For a development build, set `DOOMER_NATIVE_BINARY` to the Go executable you
 built. The installer copies it into its private runtime.
 
-The two-hook integration requires a Go build with `watch --all-changes`, on the
+The two-hook integration requires a Go build with `watch --all-changes` and `watch agent-hook`, on the
 `feat/watch-all-changes` branch until released. An older stable release can run
 manual reviews, but doctor reports automatic reviews unavailable rather than
 silently claiming the watcher is ready.
@@ -124,9 +124,10 @@ npx @doomerlabs/doomer revoke
 
 Hooks use global Claude `settings.json` and Codex `hooks.json`, respecting
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. They call the persistent CLI by absolute
-path, independent of `PATH` and skill discovery. A stable launcher reads the
-current managed runtime from private state, so normal CLI updates do not change
-the hook command or require rediscovery:
+path, independent of `PATH` and skill discovery. They execute the Go binary
+directly using `watch agent-hook`; Node is only used for management commands.
+The Go hook reads saved upload approvals and inherits `DOOMER_API_URL` and
+`DOOMER_TOKEN` from the agent environment:
 
 - `UserPromptSubmit` starts or reuses a detached Go watcher and forwards the
   prompt and session context. The Go watcher observes the filesystem and reviews
