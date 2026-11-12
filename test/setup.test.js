@@ -11,7 +11,7 @@ test('global install replaces the old CLI, installs skills via official CLI, rep
   t.after(() => rm(home, { recursive: true, force: true }));
   const npm = join(home, 'fake-npm.mjs');
   const native = join(home, 'fake-go');
-  await writeFile(native, '#!/usr/bin/env node\nconsole.log(process.argv.includes("--help") ? "--all-changes --manager-home turn-worker" : "doomer 2026.11.10.3");\n', {mode:0o755});
+  await writeFile(native, '#!/usr/bin/env node\nconsole.log(process.argv.includes("--help") ? "Watch recursively and review settled changes until stopped" : "doomer 2026.11.10.3");\n', {mode:0o755});
   await writeFile(npm, `
 import { cp, mkdir, writeFile, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -54,10 +54,16 @@ else process.exit(1);
   assert.ok(calls.some(args => args.includes('skills') && args.includes('doomerlabs/skills#feat/doomer-node-skill') && args.includes('doomer') && args.includes('--global')));
   assert.ok(calls.some(args => args[0] === 'pack'), 'install persists the running package without a published npm version');
   assert.ok(calls.some(args => args[0] === 'install' && args.at(-1).endsWith('.tgz')));
+  env.DOOMER_TOKEN = 'account-token-for-test';
+  env.DOOMER_CONFIG_DIR = join(home, 'production-config');
   await cli(['onboard', '--agent', 'codex', '--approve-uploads']);
   assert.equal((await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').length, calls.length, 'skill-first/onboard reuses installed CLI and skill');
   const approved = JSON.parse(await readFile(join(home, 'state', 'state.json')));
   assert.equal(approved.grants[0].scope, 'global');
+  assert.equal(approved.identities['https://doomer.ai/api'], 'account-token-for-test');
+  assert.equal(approved.credentialDirs['https://doomer.ai/api'], env.DOOMER_CONFIG_DIR);
+  delete env.DOOMER_TOKEN;
+  delete env.DOOMER_CONFIG_DIR;
   assert.equal(approved.grants[0].repo, undefined);
   assert.equal(approved.grants[0].agents, undefined);
   await exec(process.execPath, [entry, 'revoke'], {env, cwd: home});

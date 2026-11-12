@@ -44,8 +44,8 @@ export function archiveBinary(archive) {
   return binary;
 }
 
-async function supportsTurnWorkers(binary) {
-  try { return (await run(binary, ['watch', 'turn-worker', '--help'])).toString().includes('turn-worker'); }
+async function supportsWatch(binary) {
+  try { return (await run(binary, ['watch', '--help'])).toString().includes('Watch recursively and review settled changes until stopped'); }
   catch { return false; }
 }
 
@@ -58,12 +58,12 @@ export async function installNative({ update = false } = {}) {
     if (source !== target) await atomicWrite(target, await readFile(source), 0o755);
     await chmod(target, 0o755);
     const version = (await run(target, ['--version'])).toString().trim();
-    const turnWorkers = await supportsTurnWorkers(target);
-    await changeState(s => { s.native = { path: target, version, source: 'local', turnWorkers }; });
-    return { path: target, version, turnWorkers };
+    const watch = await supportsWatch(target);
+    await changeState(s => { s.native = { path: target, version, source: 'local', watch }; });
+    return { path: target, version, watch };
   }
   if (!update && state.native?.path === target && await exists(target)) {
-    const native = {...state.native, version:(await run(target, ['--version'])).toString().trim(), turnWorkers:await supportsTurnWorkers(target)};
+    const native = {...state.native, version:(await run(target, ['--version'])).toString().trim(), watch:await supportsWatch(target)};
     await changeState(s => {s.native = native;});
     return native;
   }
@@ -79,7 +79,7 @@ export async function installNative({ update = false } = {}) {
   await atomicWrite(target, binary, 0o755);
   const version = (await run(target, ['--version'])).toString().trim();
   if (!version.includes(manifest.version)) throw new Error('Native CLI version does not match the release manifest.');
-  const native = { path: target, version: manifest.version, sha256: hash(binary), source: 'stable', turnWorkers: await supportsTurnWorkers(target) };
+  const native = { path: target, version: manifest.version, sha256: hash(binary), source: 'stable', watch: await supportsWatch(target) };
   await changeState(s => { s.native = native; });
   return native;
 }

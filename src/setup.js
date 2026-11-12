@@ -146,7 +146,11 @@ export async function configure(selected, runtime, options) {
     const service = resolveAPI(options['api-url'], s.api);
     if (s.grants.some(g => g.api === service)) {
       s.identities ??= {};
-      s.identities[service] ||= `doomer_anon_${randomBytes(32).toString('base64url')}`;
+      s.identities[service] = process.env.DOOMER_TOKEN || s.identities[service] || `doomer_anon_${randomBytes(32).toString('base64url')}`;
+      if (process.env.DOOMER_CONFIG_DIR) {
+        s.credentialDirs ??= {};
+        s.credentialDirs[service] = resolve(process.env.DOOMER_CONFIG_DIR);
+      }
     }
   });
   return installed;
@@ -158,7 +162,11 @@ export async function grant(api) {
     s.grants = s.grants.filter(g => g.api !== service);
     s.grants.push({ scope: 'global', api: service, approvedAt: new Date().toISOString() });
     s.identities ??= {};
-    s.identities[service] ||= `doomer_anon_${randomBytes(32).toString('base64url')}`;
+    s.identities[service] = process.env.DOOMER_TOKEN || s.identities[service] || `doomer_anon_${randomBytes(32).toString('base64url')}`;
+    if (process.env.DOOMER_CONFIG_DIR) {
+      s.credentialDirs ??= {};
+      s.credentialDirs[service] = resolve(process.env.DOOMER_CONFIG_DIR);
+    }
   });
 }
 
@@ -173,7 +181,7 @@ export async function setup(options, { forceSkill = true } = {}) {
     console.error('Adding the doomer skill through the official skills CLI…');
     await installSkill(selected);
   }
-  if (selected.length && !native.turnWorkers) throw new Error('The Go CLI needs in-memory turn-worker support. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
+  if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
   await configure(selected, native.path, options);
   const result = { ...installed, ...command, agents: selected, ...(await doctor()) };
   if(selected.includes('codex')) {
@@ -189,7 +197,7 @@ export async function doctor() {
   const runtime = state.runtime;
   const cli = !!runtime && await exists(runtime);
   const native = !!state.native?.path && await exists(state.native.path);
-  const automaticReviews = state.agents.length === 0 || state.native?.turnWorkers === true;
+  const automaticReviews = state.agents.length === 0 || state.native?.watch === true;
   const hooks = await Promise.all(state.agents.map(agent => checkHooks(agent, state.native?.path)));
   const skill = await skillPresent(state.agents);
   let executable = false;
@@ -198,7 +206,7 @@ export async function doctor() {
     catch { /* Missing or replaced global command. */ }
     if (process.platform === 'win32') executable = await exists(state.executable);
   }
-  return { ready: cli && native && automaticReviews && executable && skill && hooks.every(h => h.configured && h.enabled), cli, native, automaticReviews, nativeVersion:state.native?.version, version: state.cliVersion || null, executable: state.executable || null, commandInstalled: executable, skill: skill ? 'installed' : 'missing', hooks, uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })), next: !cli || !native || !executable || !skill ? 'npx @doomerlabs/doomer onboard' : !automaticReviews ? 'Install a Go CLI with in-memory turn-worker support using DOOMER_NATIVE_BINARY, then rerun onboard.' : hooks.some(h => !h.configured) ? 'npx @doomerlabs/doomer install-hooks' : hooks.some(h => !h.enabled) ? 'Enable hooks in your agent settings.' : 'Review and trust the Doomer hooks in /hooks. If they are missing, run npx @doomerlabs/doomer refresh-hooks. Configuration on disk does not verify activation.' };
+  return { ready: cli && native && automaticReviews && executable && skill && hooks.every(h => h.configured && h.enabled), cli, native, automaticReviews, nativeVersion:state.native?.version, version: state.cliVersion || null, executable: state.executable || null, commandInstalled: executable, skill: skill ? 'installed' : 'missing', hooks, uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })), next: !cli || !native || !executable || !skill ? 'npx @doomerlabs/doomer onboard' : !automaticReviews ? 'Install a Go CLI with the current watch command using DOOMER_NATIVE_BINARY, then rerun onboard.' : hooks.some(h => !h.configured) ? 'npx @doomerlabs/doomer install-hooks' : hooks.some(h => !h.enabled) ? 'Enable hooks in your agent settings.' : 'Review and trust the Doomer hooks in /hooks. If they are missing, run npx @doomerlabs/doomer refresh-hooks. Configuration on disk does not verify activation.' };
 }
 
 export async function update(options) {
@@ -210,7 +218,7 @@ export async function update(options) {
   const command = await installGlobalCLI(native);
   const selected = (await readState()).agents;
   await installSkill(selected);
-  if (selected.length && !native.turnWorkers) throw new Error('The Go CLI needs in-memory turn-worker support.');
+  if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command.');
   for (const agent of selected) await installHooks(agent, native.path);
   const updated = { ...result, ...command, version, ...(await doctor()) };
   if(selected.includes('codex')) {

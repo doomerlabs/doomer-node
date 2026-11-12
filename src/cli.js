@@ -83,7 +83,7 @@ export async function main(args) {
     case 'install-hooks': {
       const selected = await selectAgents(options);
       const native = await installNative();
-      if (!native.turnWorkers) throw new Error('The Go CLI needs in-memory turn-worker support. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
+      if (!native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
       for (const agent of selected) {
         const result = await installHooks(agent, native.path);
         console.log(`${agent}: ${result.changed ? 'installed' : 'already configured'} (${result.file})`);

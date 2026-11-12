@@ -41,7 +41,7 @@ verifies its archive checksum. It keeps the Go executable privately as
 For a development build, set `DOOMER_NATIVE_BINARY` to the Go executable you
 built. The installer copies it into its private runtime.
 
-The turn-worker integration requires a Go build with `watch agent-hook` and `watch turn-worker`, on the
+The integration requires a Go build with the foreground `watch` command and `watch agent-hook`, on the
 `feat/watch-all-changes` branch until released. An older stable release can run
 manual reviews, but doctor reports automatic reviews unavailable rather than
 silently claiming the watcher is ready.
@@ -126,17 +126,21 @@ Hooks use global Claude `settings.json` and Codex `hooks.json`, respecting
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. They call the persistent CLI by absolute
 path, independent of `PATH` and skill discovery. They execute the Go binary
 directly using `watch agent-hook`; Node is only used for management commands.
-The Go hook reads saved upload approvals and inherits `DOOMER_API_URL` and
-`DOOMER_TOKEN` from the agent environment:
+The Go hook reads saved upload approvals. It uses `DOOMER_API_URL` and
+`DOOMER_TOKEN` from the agent environment when set, and reads the account
+credentials from the service-specific configuration directory saved during onboarding:
 
-- `UserPromptSubmit` starts an independent Go worker for that agent, session, and
-  turn. It discovers repositories recursively beneath the chat directory.
-- The worker keeps snapshots, pending requests, and results in memory. It does
+- `UserPromptSubmit` starts `doomer watch` for that agent session and turn.
+  The hook controls its lifetime; watch discovers repositories recursively.
+- The watcher keeps snapshots, pending requests, and results in memory. It does
   not create runtime JSON, PID files, lock directories, or disk upload caches.
-- `Stop` drains the final changes, returns the results, and exits that worker.
-  Codex `Interrupt` and Claude `SessionEnd` also clean up their turn workers.
-- Linux workers use abstract Unix sockets with no filesystem entry. macOS uses
-  temporary socket endpoints that are removed when the worker exits.
+- `Stop` drains the final changes, returns the results, and exits that watcher.
+  Codex `Interrupt` and Claude `SessionEnd` also stop their watches.
+- Linux watchers use abstract Unix sockets with no filesystem entry. macOS uses
+  temporary socket endpoints that are removed when the watcher exits.
+
+You can also run `doomer watch /path/to/workspace` directly. It watches until you
+stop it with Ctrl+C or SIGTERM and prints review results as JSON.
 
 Pre/post-tool hooks are not installed or invoked by this flow. Repair removes
 only this Node installer's old tool-hook entries, preserving other hooks.

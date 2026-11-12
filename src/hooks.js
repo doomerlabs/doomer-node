@@ -79,7 +79,7 @@ export function mergeHooks(config, agent, executable = join(paths().bin, 'doomer
       continue;
     }
     const handler = { type: 'command', command: hookCommand(agent, executable), timeout: event === 'Stop' ? 60 : event === 'UserPromptSubmit' ? 45 : 15 };
-    if (agent === 'codex') handler.statusMessage = event === 'UserPromptSubmit' ? 'Doomer: start turn worker' : 'Doomer: finish turn worker';
+    if (agent === 'codex') handler.statusMessage = event === 'UserPromptSubmit' ? 'Doomer: start watch' : 'Doomer: stop watch';
     next.hooks[event] = [...kept, { hooks: [handler] }];
   }
   return next;
