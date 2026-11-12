@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mergeHooks, hookCommand } from '../src/hooks.js';
+
+test('hook repair is idempotent and preserves old Doomer, unrelated hooks, permissions and trust', () => {
+  const original = { permissions: { deny: ['Bash(curl *)'] }, disableAllHooks: true, hooks: {
+    Stop: [{ hooks: [{ type: 'command', command: '/old/doomer agent-hook' }, { type: 'command', command: 'echo unrelated' }] }],
+  } };
+  const next = mergeHooks(original, 'claude', '/private/with space/bin/doomer.js');
+  assert.deepEqual(mergeHooks(next, 'claude', '/private/with space/bin/doomer.js'), next);
+  assert.deepEqual(next.permissions, original.permissions);
+  assert.equal(next.disableAllHooks, true);
+  assert.equal(next.hooks.Stop.length, 2);
+  assert.deepEqual(next.hooks.Stop[0], original.hooks.Stop[0]);
+  assert.match(hookCommand('claude', "/a/quote'/cli.js"), /'"'"'/);
+  assert.equal(original.hooks.Stop.length, 1);
+});
+
+test('rejects malformed settings before changing them', () => {
+  for (const config of [[], { hooks: [] }, { hooks: { Stop: {} } }, { hooks: { Stop: [{ hooks: [null] }] } }]) assert.throws(() => mergeHooks(config, 'codex'), /Invalid/);
+});

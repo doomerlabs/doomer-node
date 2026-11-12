@@ -1,0 +1,19 @@
+{
+  "name": "@doomerlabs/doomer",
+  "version": "0.1.0",
+  "description": "Doomer Quick reviews and deterministic coding-agent setup",
+  "type": "module",
+  "bin": { "doomer": "bin/doomer.js" },
+  "engines": { "node": ">=22" },
+  "files": ["bin/", "src/", "README.md", "LICENSE"],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --check bin/doomer.js && npm test",
+    "prepublishOnly": "npm run check"
+  },
+  "repository": { "type": "git", "url": "git+https://github.com/doomerlabs/doomer-node.git" },
+  "homepage": "https://github.com/doomerlabs/doomer-node#readme",
+  "bugs": { "url": "https://github.com/doomerlabs/doomer-node/issues" },
+  "license": "Apache-2.0",
+  "publishConfig": { "access": "public" }
+}
