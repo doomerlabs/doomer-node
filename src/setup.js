@@ -6,6 +6,7 @@ import { agents, hookFile, installHooks, checkHooks } from './hooks.js';
 import { paths, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
 import { endpoint } from './api.js';
 import { uploadPrompt } from './permissions.js';
+import { installNative } from './native.js';
 
 export async function question(text) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error('Interactive setup requires a terminal. Pass --agent claude,codex or --no-hooks.');
@@ -157,6 +158,7 @@ export async function setup(options, { forceSkill = true } = {}) {
   endpoint(options['api-url'] || (await readState()).api);
   const selected = await selectAgents(options);
   const installed = await installCLI({ from: options.from });
+  await installNative();
   if (forceSkill || !await skillPresent(selected)) {
     console.error('Adding the doomer skill through the official skills CLI…');
     await installSkill(selected);
@@ -169,6 +171,8 @@ export async function doctor() {
   const state = await readState();
   const runtime = state.runtime;
   const cli = !!runtime && await exists(runtime);
+  const native = !!state.native?.path && await exists(state.native.path);
+  const automaticReviews = state.agents.length === 0 || state.native?.allChanges === true;
   const hooks = await Promise.all(state.agents.map(agent => checkHooks(agent, state.hookLauncher || runtime)));
   const skill = await skillPresent(state.agents);
   let executable = false;
@@ -177,7 +181,7 @@ export async function doctor() {
     catch { /* Missing or replaced global command. */ }
     if (process.platform === 'win32') executable = await exists(state.executable);
   }
-  return { ready: cli && executable && skill && hooks.every(h => h.configured && h.enabled), cli, version: state.cliVersion || null, executable: state.executable || null, commandInstalled: executable, skill: skill ? 'installed' : 'missing', hooks, uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })), next: !cli || !executable || !skill ? 'npx @doomerlabs/doomer onboard' : hooks.some(h => !h.configured) ? 'doomer install-hooks' : hooks.some(h => !h.enabled) ? 'Enable hooks in your agent settings.' : 'Restart your agent, then review and trust the Doomer hooks in /hooks. Configuration on disk does not verify activation.' };
+  return { ready: cli && native && automaticReviews && executable && skill && hooks.every(h => h.configured && h.enabled), cli, native, automaticReviews, nativeVersion:state.native?.version, version: state.cliVersion || null, executable: state.executable || null, commandInstalled: executable, skill: skill ? 'installed' : 'missing', hooks, uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })), next: !cli || !native || !executable || !skill ? 'npx @doomerlabs/doomer onboard' : !automaticReviews ? 'Install a Go CLI with --all-changes support using DOOMER_NATIVE_BINARY, then rerun onboard.' : hooks.some(h => !h.configured) ? 'doomer install-hooks' : hooks.some(h => !h.enabled) ? 'Enable hooks in your agent settings.' : 'Restart your agent, then review and trust the Doomer hooks in /hooks. Configuration on disk does not verify activation.' };
 }
 
 export async function update(options) {
@@ -185,6 +189,7 @@ export async function update(options) {
   const version = JSON.parse(raw.toString());
   if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) throw new Error('Invalid published version.');
   const result = await installCLI({ version });
+  await installNative({ update:true });
   const selected = (await readState()).agents;
   await installSkill(selected);
   for (const agent of selected) await installHooks(agent, result.hookLauncher);

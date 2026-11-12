@@ -2,7 +2,8 @@ import { parseArgs } from 'node:util';
 import { readState, changeState, metadata, paths, exists } from './system.js';
 import { setup, doctor, update, selectAgents, installCLI } from './setup.js';
 import { installHooks } from './hooks.js';
-import { review, getReview, printReview, hook } from './review.js';
+import { review } from './review.js';
+import { installNative, nativeHook, stopNativeWatchers } from './native.js';
 import { endpoint } from './api.js';
 
 const HELP = `Doomer ${metadata.version} — Quick code review
@@ -77,6 +78,7 @@ export async function main(args) {
       const selected = await selectAgents(options);
       const state = await readState();
       const runtime = state.hookLauncher && await exists(state.hookLauncher) ? state.hookLauncher : (await installCLI({ from: options.from })).hookLauncher;
+      await installNative();
       for (const agent of selected) {
         const result = await installHooks(agent, runtime);
         console.log(`${agent}: ${result.changed ? 'installed' : 'already configured'} (${result.file})`);
@@ -91,13 +93,13 @@ export async function main(args) {
       return result.ready ? 0 : 1;
     }
     case 'review': {
-      const result = subcommand === 'get' ? await getReview(id, options) : await review(options);
-      printReview(result, options.json);
-      return result.ready ? 0 : 2;
+      await review(options, subcommand === 'get' ? id : undefined);
+      return 0;
     }
     case 'revoke': {
       const service = endpoint(options['api-url'] || (await readState()).api);
       await changeState(s => { s.grants = s.grants.filter(g => g.api !== service); });
+      await stopNativeWatchers(service);
       console.log(`Removed saved upload approval for ${new URL(service).origin}.`);
       return 0;
     }
@@ -105,7 +107,7 @@ export async function main(args) {
       try {
         let data = '';
         for await (const part of process.stdin) { data += part; if (data.length > 1024 * 1024) throw new Error('Hook input too large.'); }
-        console.log(JSON.stringify(await hook(JSON.parse(data), options)));
+        console.log(JSON.stringify(await nativeHook(JSON.parse(data), options)));
       } catch (error) {
         console.error(`Doomer hook: ${error.message}`);
         console.log(JSON.stringify({ systemMessage: `Doomer Quick review was not completed: ${error.message}` }));

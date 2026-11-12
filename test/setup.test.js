@@ -10,6 +10,8 @@ test('global install replaces the old CLI, installs skills via official CLI, rep
   const home = await mkdtemp(join(tmpdir(), 'doomer-install-'));
   t.after(() => rm(home, { recursive: true, force: true }));
   const npm = join(home, 'fake-npm.mjs');
+  const native = join(home, 'fake-go');
+  await writeFile(native, '#!/usr/bin/env node\nconsole.log(process.argv.includes("--help") ? "--all-changes" : "doomer 2026.11.10.3");\n', {mode:0o755});
   await writeFile(npm, `
 import { cp, mkdir, writeFile, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -35,7 +37,7 @@ else process.exit(1);
   await writeFile(join(bin, 'doomer'), 'old doomer');
   const codex = join(home, '.codex'); await mkdir(codex);
   await writeFile(join(codex, 'hooks.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo keep' }] }] }, trust: 'keep' }));
-  const env = { ...process.env, HOME: home, DOOMER_HOME: join(home, 'state'), DOOMER_BIN_DIR: bin, CODEX_HOME: codex, CLAUDE_CONFIG_DIR: join(home, '.claude'), npm_execpath: npm, SOURCE: packageRoot };
+  const env = { ...process.env, HOME: home, DOOMER_HOME: join(home, 'state'), DOOMER_BIN_DIR: bin, CODEX_HOME: codex, CLAUDE_CONFIG_DIR: join(home, '.claude'), npm_execpath: npm, SOURCE: packageRoot, DOOMER_NATIVE_BINARY:native };
   const cli = args => exec(process.execPath, [entry, ...args], { env });
   assert.equal(JSON.parse((await cli(['install', '--agent', 'codex', '--json'])).stdout).ready, true);
   const state = JSON.parse(await readFile(join(home, 'state', 'state.json')));

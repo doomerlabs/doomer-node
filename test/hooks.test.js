@@ -5,6 +5,8 @@ import { mergeHooks, hookCommand } from '../src/hooks.js';
 test('hook repair is idempotent and preserves old Doomer, unrelated hooks, permissions and trust', () => {
   const original = { permissions: { deny: ['Bash(curl *)'] }, disableAllHooks: true, hooks: {
     Stop: [{ hooks: [{ type: 'command', command: '/old/doomer agent-hook' }, { type: 'command', command: 'echo unrelated' }] }],
+    PreToolUse: [{matcher:'.*',hooks:[{command:'node old hook --owner=doomer-node'},{command:'echo keep tool hook'}]}],
+    PostToolUse: [{hooks:[{command:'node old hook --owner=doomer-node'}]}],
   } };
   const next = mergeHooks(original, 'claude', '/private/with space/bin/doomer.js');
   assert.deepEqual(mergeHooks(next, 'claude', '/private/with space/bin/doomer.js'), next);
@@ -14,6 +16,8 @@ test('hook repair is idempotent and preserves old Doomer, unrelated hooks, permi
   assert.deepEqual(next.hooks.Stop[0], original.hooks.Stop[0]);
   assert.match(hookCommand('claude', "/a/quote'/cli.js"), /'"'"'/);
   assert.equal(original.hooks.Stop.length, 1);
+  assert.deepEqual(next.hooks.PreToolUse,[{matcher:'.*',hooks:[{command:'echo keep tool hook'}]}]);
+  assert.equal(next.hooks.PostToolUse,undefined);
 });
 
 test('rejects malformed settings before changing them', () => {

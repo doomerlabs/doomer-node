@@ -1,8 +1,9 @@
 # Doomer Node CLI
 
-The Node.js CLI for Doomer Quick reviews. npm package: `@doomerlabs/doomer`.
-Installed executable: `doomer`. The existing Go CLI, site, `install.md`, and
-`doomer-review` skill are maintained separately.
+The management CLI for Doomer. npm package: `@doomerlabs/doomer`.
+Installed executable: `doomer`. The Go CLI handles filesystem watching, source
+capture, uploads, and Quick reviews. The site, old installer, and `doomer-review`
+skill remain separate.
 
 ## Install
 
@@ -25,6 +26,17 @@ Setup selects Claude Code, Codex, both, or standalone reviews, then:
    up original configuration files.
 5. Offers global source-upload approval separately: “Allow Doomer reviews to
    upload source snapshots to Doomer (https://doomer.ai)?”
+
+The installer also downloads the Go CLI from the official stable channel and
+verifies its archive checksum. It keeps the Go executable privately as
+`doomer-node/bin/doomer-go`; the public `doomer` command remains the manager.
+For a development build, set `DOOMER_NATIVE_BINARY` to the Go executable you
+built. The installer copies it into its private runtime.
+
+The two-hook integration requires a Go build with `watch --all-changes`, on the
+`feat/watch-all-changes` branch until released. An older stable release can run
+manual reviews, but doctor reports automatic reviews unavailable rather than
+silently claiming the watcher is ready.
 
 Explicit agent selection supports noninteractive installation:
 
@@ -71,9 +83,9 @@ doomer review --wait none
 doomer review get REVIEW_ID
 ```
 
-Reviews call the existing Doomer workspace API directly from Node. No Go binary
-is downloaded or invoked. This path requests only Quick/Look Closer, with Deep
-disabled. Anonymous reviews use a private, persistent service-specific identity;
+Reviews are delegated to the installed Go CLI. The manager requests
+Quick/Look Closer with Deep disabled. Anonymous reviews use a private,
+persistent service-specific identity;
 `DOOMER_TOKEN` can explicitly supply another credential.
 
 Without saved approval, manual review prompts before uploading. A human may use
@@ -82,15 +94,15 @@ without approval fails before any network request.
 
 Snapshots include tracked and non-ignored untracked files, including staged and
 unstaged edits. Git metadata is excluded. Symlinks, submodules, Git LFS pointers,
-sparse checkouts, and merge conflicts are rejected. Initial limits are 20 MiB
-per file, 256 MiB per tree, and 20,000 files. Source snapshots and the patch are
+sparse checkouts, and merge conflicts are rejected. Limits and capture behavior
+are defined by the Go CLI. Source snapshots and the patch are
 uploaded; do not include secrets in reviewed source. Review never modifies the
 working tree or Git index.
 
 The default baseline is the merge base with `origin/HEAD`, `main`, or `master`,
-falling back to `HEAD`. `--base` selects another local commit. Identical
-source/baseline pairs reuse the same review. Quick readiness is independent of
-aggregate review status. Exit codes: 0 ready/no changes, 2 pending, 1 error.
+falling back to `HEAD`. `--base` selects another local commit. Quick readiness is
+independent of aggregate review status. JSON results use the Go CLI's output
+format. Manual review submission and result handling follow that CLI.
 
 ## Hooks and maintenance
 
@@ -107,12 +119,16 @@ path, independent of `PATH` and skill discovery. A stable launcher reads the
 current managed runtime from private state, so normal CLI updates do not change
 the hook command or require rediscovery:
 
-- `UserPromptSubmit` captures the working tree as the task baseline.
-- `Stop` checks for changes and directly runs Quick review when upload approval
-  exists for the service. Findings return through a blocking
-  hook response. Further edits are reviewed at the next stop.
+- `UserPromptSubmit` starts or reuses a detached Go watcher and forwards the
+  prompt and session context. The Go watcher observes the filesystem and reviews
+  all settled changes, including manual edits and other processes' changes.
+- `Stop` asks the Go hook to capture the latest state and wait for Quick results.
+  Findings return through its native blocking hook response.
 
-Read-only turns with no source changes do not submit reviews. Hooks never invent
+Pre/post-tool hooks are not installed or invoked by this flow. Repair removes
+only this Node installer's old tool-hook entries, preserving other hooks.
+
+Clean trees with no diff do not submit reviews. Hooks never invent
 approval or modify native trust. Review/trust the definitions through the agent's
 native controls after restarting the agent. Setup prints the exact hook file
 path; an already running Codex TUI may still show its startup configuration.
@@ -126,7 +142,7 @@ addressed every finding.
 `doctor` inspects the actual skill, executable, and hooks. It reports saved
 configuration separately from unverified native activation. `install-hooks`
 repairs this Node CLI's hooks. `update` installs the latest npm package, updates
-the skill through the skills CLI, and points configured hooks at the new runtime.
+the skill through the skills CLI, and updates the native CLI.
 `revoke` removes saved upload permission for the configured service, not hosted
 reviews. Legacy repository-specific approvals retain their original scope;
 onboard again to accept the new global permission.
@@ -146,8 +162,8 @@ npm run check
 npm pack --dry-run
 ```
 
-No runtime dependencies or install scripts. Tests use temporary Git repositories,
-agent settings, a fake npm executable, and a loopback API. They do not upload to
+No npm runtime dependencies or install scripts. Tests use temporary Git repositories,
+agent settings, and fake npm/native executables. They do not upload to
 the live service or alter your CLI. npm and skills.sh provide their own metrics;
 no additional Doomer installation telemetry is implemented yet. Live-service and
 native-agent acceptance testing remain release checks.

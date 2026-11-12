@@ -5,6 +5,8 @@ import { atomicWrite, entry, quote, readJSON, locked, paths } from './system.js'
 
 export const agents = ['claude', 'codex'];
 export const events = ['UserPromptSubmit', 'Stop'];
+export const eventsFor = () => events;
+const retiredEvents = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure'];
 const marker = '--owner=doomer-node';
 export function hookFile(agent) {
   if (agent === 'claude') return join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'settings.json');
@@ -22,7 +24,7 @@ export function hookCommand(agent, executable = entry) {
 function object(value) { return value && typeof value === 'object' && !Array.isArray(value); }
 function validate(config) {
   if (!object(config) || (config.hooks !== undefined && !object(config.hooks))) throw new Error('Invalid hook settings; existing configuration was not changed.');
-  for (const event of events) {
+  for (const event of [...events, ...retiredEvents]) {
     const groups = config.hooks?.[event] || [];
     if (!Array.isArray(groups) || groups.some(g => !object(g) || !Array.isArray(g.hooks) || g.hooks.some(h => !object(h)))) {
       throw new Error(`Invalid ${event} hook settings; existing configuration was not changed.`);
@@ -35,10 +37,15 @@ export function mergeHooks(config, agent, executable = entry) {
   validate(config);
   const next = structuredClone(config);
   next.hooks ??= {};
-  for (const event of events) {
+  for (const event of [...events, ...retiredEvents]) {
     const kept = (next.hooks[event] || []).map(group => ({ ...group, hooks: group.hooks.filter(h => !owned(h)) })).filter(g => g.hooks.length);
-    const handler = { type: 'command', command: hookCommand(agent, executable), timeout: event === 'Stop' ? 120 : 10 };
-    if (agent === 'codex') handler.statusMessage = event === 'Stop' ? 'Doomer: check review' : 'Doomer: capture baseline';
+    if (retiredEvents.includes(event)) {
+      if (kept.length) next.hooks[event] = kept;
+      else delete next.hooks[event];
+      continue;
+    }
+    const handler = { type: 'command', command: hookCommand(agent, executable), timeout: event === 'Stop' ? 60 : 45 };
+    if (agent === 'codex') handler.statusMessage = event === 'Stop' ? 'Doomer: check review' : 'Doomer: start watcher';
     next.hooks[event] = [...kept, { hooks: [handler] }];
   }
   return next;
@@ -62,7 +69,7 @@ export async function checkHooks(agent, executable = entry) {
     const config = await readJSON(file, {});
     validate(config);
     const command = hookCommand(agent, executable);
-    const configured = events.every(event => (config.hooks?.[event] || []).some(group => !group.matcher && group.hooks.some(h => h.type === 'command' && h.command === command && h.async !== true)));
+    const configured = eventsFor(agent).every(event => (config.hooks?.[event] || []).some(group => (!group.matcher || group.matcher === '.*') && group.hooks.some(h => h.type === 'command' && h.command === command && h.async !== true)));
     return { agent, file, configured, enabled: config.disableAllHooks !== true, activation: 'unverified' };
   } catch (error) { return { agent, file, configured: false, error: error.message }; }
 }
