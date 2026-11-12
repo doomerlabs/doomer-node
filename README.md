@@ -19,7 +19,7 @@ Setup selects Claude Code, Codex, both, or standalone reviews, then:
 2. Replaces `~/.local/bin/doomer` with a link to it, backing up an existing
    command. Add `~/.local/bin` to `PATH` if absent.
 3. Adds the global skill through the official skills CLI, equivalent to
-   `npx skills add doomerlabs/skills --skill doomer --global`. Skills.sh counts
+   `npx skills add 'doomerlabs/skills#feat/doomer-node-skill' --skill doomer --global`. Skills.sh counts
    come from that CLI's telemetry; user telemetry settings are respected.
 4. Installs agent hooks, preserving unrelated settings and hooks and backing
    up original configuration files.
@@ -36,14 +36,21 @@ A human can add `--approve-uploads --repo /path/to/repo` to authorize uploads
 for the selected agents and repository. Agents must not supply approval flags
 without the user's authorization. Native hook trust is always user managed.
 
-**Release prerequisite:** publish this package to npm and merge the new skill
-in `doomerlabs/skills` before advertising the public install command. For local
-development, use `npm pack` and `node bin/doomer.js install --from /path/to/package.tgz`.
+**Temporary testing source:** installation and updates currently fetch the skill
+from `feat/doomer-node-skill`, so local testing does not require merging skills
+PR #81. After that PR merges, change the source back to `doomerlabs/skills`.
+Publish this package to npm before advertising the public install command.
+For local testing from this checkout:
+
+```sh
+npm pack
+node bin/doomer.js install --from "$PWD/doomerlabs-doomer-0.1.0.tgz"
+```
 
 ## Installed the skill directly?
 
 ```sh
-npx skills add doomerlabs/skills --skill doomer --global
+npx skills add 'doomerlabs/skills#feat/doomer-node-skill' --skill doomer --global
 npx @doomerlabs/doomer onboard
 ```
 

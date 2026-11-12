@@ -43,7 +43,7 @@ else process.exit(1);
   assert.match(hooks.hooks.Stop[1].hooks[0].command, /--owner=doomer-node/);
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
   const calls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.ok(calls.some(args => args.includes('skills') && args.includes('doomerlabs/skills') && args.includes('doomer') && args.includes('--global')));
+  assert.ok(calls.some(args => args.includes('skills') && args.includes('doomerlabs/skills#feat/doomer-node-skill') && args.includes('doomer') && args.includes('--global')));
   await cli(['onboard', '--agent', 'codex']);
   assert.equal((await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').length, calls.length, 'skill-first/onboard reuses installed CLI and skill');
   await writeFile(join(codex, 'hooks.json'), JSON.stringify({ hooks: {}, permissions: 'preserve' }));
