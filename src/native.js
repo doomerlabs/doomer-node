@@ -4,7 +4,7 @@ import { open, mkdir, readFile, chmod } from 'node:fs/promises';
 import { join, dirname, resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { endpoint } from './api.js';
+import { resolveAPI } from './api.js';
 import { paths, hash, run, readState, changeState, readJSON, writeJSON, atomicWrite, locked, exists } from './system.js';
 import { hasUploadApproval } from './permissions.js';
 import { repositoryRoot } from './snapshot.js';
@@ -79,9 +79,9 @@ export async function installNative({ update = false } = {}) {
   return native;
 }
 
-export function nativeContext(state, agent = 'manual', api = state.api) {
+export function nativeContext(state, agent = 'manual', api) {
   if (!state.native?.path) throw new Error('The Go CLI is missing. Run npx @doomerlabs/doomer onboard.');
-  const service = endpoint(api);
+  const service = resolveAPI(api, state.api);
   const profile = `node-${agent}`;
   const config = join(paths().home, 'native-state');
   return { binary: state.native.path, api: service, profile, config,

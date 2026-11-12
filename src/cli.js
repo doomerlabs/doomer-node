@@ -4,7 +4,7 @@ import { setup, doctor, update, selectAgents, installCLI } from './setup.js';
 import { installHooks } from './hooks.js';
 import { review } from './review.js';
 import { installNative, nativeHook, stopNativeWatchers } from './native.js';
-import { endpoint } from './api.js';
+import { resolveAPI } from './api.js';
 import { uninstall } from './uninstall.js';
 import { reloadCodexHooks, reloadMessage } from './codex.js';
 
@@ -36,7 +36,7 @@ Review options:
   --timeout SECONDS            Quick result wait limit (default: 60)
   --show-diff                  Print the exact submitted diff to stderr
   --json                       Machine-readable result
-  --api-url URL                Service (default: https://doomer.ai/api)
+  --api-url URL                Service (or DOOMER_API_URL; default: https://doomer.ai/api)
 
 Node.js 22+ and Git required. Setup does not grant native hook trust.
 `;
@@ -120,7 +120,7 @@ export async function main(args) {
       return 0;
     }
     case 'revoke': {
-      const service = endpoint(options['api-url'] || (await readState()).api);
+      const service = resolveAPI(options['api-url'], (await readState()).api);
       await changeState(s => { s.grants = s.grants.filter(g => g.api !== service); });
       await stopNativeWatchers(service);
       console.log(`Removed saved upload approval for ${new URL(service).origin}.`);

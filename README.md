@@ -11,6 +11,13 @@ skill remain separate.
 Requires Node.js 22+, npm, and Git. Initial supported hosts: macOS and Linux.
 Run setup in the environment where your agent edits code.
 
+Set `DOOMER_API_URL=http://localhost:3000/api` before setup and before launching
+your agent to default a development environment to the local service. Selection
+order is `--api-url`, `DOOMER_API_URL`, the saved endpoint, then
+`https://doomer.ai/api`. Upload approval remains specific to the service.
+Already running watchers retain their original endpoint; revoke that endpoint
+before switching if you want them stopped.
+
 ```sh
 npx @doomerlabs/doomer install
 ```

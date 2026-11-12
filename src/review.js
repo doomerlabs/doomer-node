@@ -1,5 +1,5 @@
 import { readState, run } from './system.js';
-import { endpoint } from './api.js';
+import { resolveAPI } from './api.js';
 import { hasUploadApproval, serviceLabel } from './permissions.js';
 import { repositoryRoot } from './snapshot.js';
 import { question } from './setup.js';
@@ -7,7 +7,7 @@ import { syncNativeConsent, nativeContext } from './native.js';
 
 export async function review(options, id) {
   const state = await readState();
-  const service = endpoint(options['api-url'] || state.api);
+  const service = resolveAPI(options['api-url'], state.api);
   let context = nativeContext(state, 'manual', service);
   let args;
   if (id) {

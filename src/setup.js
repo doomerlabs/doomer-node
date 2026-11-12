@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rename, rm, lstat, symlink, readFile, readdir } from 'n
 import { createInterface } from 'node:readline/promises';
 import { agents, hookFile, installHooks, checkHooks, globalSkillPaths } from './hooks.js';
 import { paths, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
-import { endpoint } from './api.js';
+import { resolveAPI } from './api.js';
 import { uploadPrompt, acceptsUploadAnswer } from './permissions.js';
 import { installNative } from './native.js';
 import { reloadCodexHooks, reloadMessage } from './codex.js';
@@ -130,12 +130,12 @@ export async function skillPresent(selected = []) {
 export async function configure(selected, runtime, options) {
   const installed = [];
   for (const agent of selected) installed.push(await installHooks(agent, runtime));
-  await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; s.api = endpoint(options['api-url'] || s.api); });
+  await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; s.api = resolveAPI(options['api-url'], s.api); });
   if (options['approve-uploads']) {
     await grant(options['api-url']);
   } else if (process.stdin.isTTY) {
     const state = await readState();
-    const api = endpoint(options['api-url'] || state.api);
+    const api = resolveAPI(options['api-url'], state.api);
     if (!state.grants.some(g => g.scope === 'global' && g.api === api)) {
       const answer = await question(uploadPrompt(api));
       if (acceptsUploadAnswer(answer)) await grant(api);
@@ -146,14 +146,14 @@ export async function configure(selected, runtime, options) {
 
 export async function grant(api) {
   await changeState(s => {
-    const service = endpoint(api || s.api);
+    const service = resolveAPI(api, s.api);
     s.grants = s.grants.filter(g => g.api !== service);
     s.grants.push({ scope: 'global', api: service, approvedAt: new Date().toISOString() });
   });
 }
 
 export async function setup(options, { forceSkill = true } = {}) {
-  endpoint(options['api-url'] || (await readState()).api);
+  resolveAPI(options['api-url'], (await readState()).api);
   const selected = await selectAgents(options);
   await rm(join(paths().home,'uninstalling.json'),{force:true});
   const installed = await installCLI({ from: options.from });
