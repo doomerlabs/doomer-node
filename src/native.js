@@ -1,9 +1,9 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, chmod } from 'node:fs/promises';
-import { join, dirname, resolve } from 'node:path';
+import { readFile, lstat, symlink, rename, rm } from 'node:fs/promises';
+import { join, resolve, dirname, basename } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { resolveAPI } from './api.js';
-import { paths, hash, run, readState, changeState, readJSON, writeJSON, atomicWrite, locked, exists } from './system.js';
+import { paths, nativePath, hash, run, readState, changeState, readJSON, writeJSON, atomicWrite, locked, exists } from './system.js';
 import { hasUploadApproval } from './permissions.js';
 
 const RELEASES = 'https://downloads.doomer.ai/cli/';
@@ -49,23 +49,47 @@ async function supportsWatch(binary) {
   catch { return false; }
 }
 
+async function activateNative(native) {
+  const executable = nativePath();
+  const temporary = join(dirname(executable), `.doomer-${randomBytes(8).toString('hex')}`);
+  try {
+    await symlink(basename(native.path), temporary);
+    await rename(temporary, executable);
+  } finally { await rm(temporary, { force: true }); }
+  await changeState(state => {
+    state.native = native;
+    state.executable = executable;
+    state.binaries ??= {};
+    state.binaries[native.path] = native.sha256;
+  });
+  return { ...native, executable, onPath: (process.env.PATH || '').split(':').includes(dirname(executable)) };
+}
+
+async function installVersion(binary, version, source) {
+  const sha256 = hash(binary);
+  const label = source === 'local' ? /^doomer\s+([a-z0-9][a-z0-9._-]*)/i.exec(version)?.[1] : version;
+  if (!label || !/^[a-z0-9][a-z0-9._-]*$/i.test(label)) throw new Error('Invalid native CLI version.');
+  const suffix = source === 'local' ? `${label}-${sha256.slice(0, 12)}` : label;
+  const path = join(dirname(nativePath()), `doomer-${suffix}`);
+  if (await exists(path)) {
+    if (!(await lstat(path)).isFile() || hash(await readFile(path)) !== sha256) throw new Error(`Installed version differs: ${path}`);
+  } else await atomicWrite(path, binary, 0o755);
+  const reported = (await run(path, ['--version'])).toString().trim();
+  if (source === 'stable' && !reported.includes(version)) throw new Error('Native CLI version does not match the release manifest.');
+  return activateNative({ path, version, source, sha256, watch: await supportsWatch(path) });
+}
+
 export async function installNative({ update = false } = {}) {
   const state = await readState();
-  const target = join(paths().bin, 'doomer-go');
   if (process.env.DOOMER_NATIVE_BINARY) {
     const source = resolve(process.env.DOOMER_NATIVE_BINARY);
-    await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-    if (source !== target) await atomicWrite(target, await readFile(source), 0o755);
-    await chmod(target, 0o755);
-    const version = (await run(target, ['--version'])).toString().trim();
-    const watch = await supportsWatch(target);
-    await changeState(s => { s.native = { path: target, version, source: 'local', watch }; });
-    return { path: target, version, watch };
+    const version = (await run(source, ['--version'])).toString().trim();
+    return installVersion(await readFile(source), version, 'local');
   }
-  if (!update && state.native?.path === target && await exists(target)) {
-    const native = {...state.native, version:(await run(target, ['--version'])).toString().trim(), watch:await supportsWatch(target)};
-    await changeState(s => {s.native = native;});
-    return native;
+  const installed = state.native;
+  if (!update && installed?.path && dirname(installed.path) === dirname(nativePath()) && state.binaries?.[installed.path] && await exists(installed.path)) {
+    if (!(await lstat(installed.path)).isFile() || hash(await readFile(installed.path)) !== installed.sha256) throw new Error('Installed native CLI has changed. Reinstall with DOOMER_NATIVE_BINARY or update.');
+    return activateNative({ ...installed, watch: await supportsWatch(installed.path) });
   }
   const platform = `${process.platform}_${{ x64: 'amd64', arm64: 'arm64' }[process.arch] || 'unsupported'}`;
   const manifest = JSON.parse((await download(`${RELEASES}stable.json`, 1024 * 1024)).toString());
@@ -75,13 +99,7 @@ export async function installNative({ update = false } = {}) {
   if (asset.url !== expectedURL) throw new Error('Native release URL does not match its version.');
   const archive = await download(asset.url, 64 * 1024 * 1024);
   if (hash(archive) !== asset.sha256) throw new Error('Native release checksum mismatch.');
-  const binary = archiveBinary(archive);
-  await atomicWrite(target, binary, 0o755);
-  const version = (await run(target, ['--version'])).toString().trim();
-  if (!version.includes(manifest.version)) throw new Error('Native CLI version does not match the release manifest.');
-  const native = { path: target, version: manifest.version, sha256: hash(binary), source: 'stable', watch: await supportsWatch(target) };
-  await changeState(s => { s.native = native; });
-  return native;
+  return installVersion(archiveBinary(archive), manifest.version, 'stable');
 }
 
 export function nativeContext(state, agent = 'manual', api) {

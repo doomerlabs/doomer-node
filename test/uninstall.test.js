@@ -16,7 +16,7 @@ async function fixture(t) {
   for(const dir of [managed,bin,codex,claude,join(managed,'bin')])await mkdir(dir,{recursive:true});
   const runtime=join(managed,'runtime','bin','doomer.js');
   await mkdir(join(managed,'runtime','bin'),{recursive:true});await writeFile(runtime,'// manager');
-  const native=join(managed,'bin','doomer-go');
+  const native=join(bin,'doomer-2026.11.12.1');
   const audit=join(home,'stopped');
   await writeFile(native,`#!/usr/bin/env node\nconst fs=require('node:fs');const path=require('node:path');const crypto=require('node:crypto');const args=process.argv.slice(2);const get=k=>args[args.indexOf(k)+1];const dir=path.join(process.env.DOOMER_CONFIG_DIR,'watch',crypto.createHash('sha256').update(get('--api-url')+'\\0'+get('--profile')).digest('hex'));fs.writeFileSync(process.env.UNINSTALL_AUDIT,'stopped');fs.rmSync(path.join(dir,'process.json'),{force:true});\n`,{mode:0o755});
   const global=join(bin,'doomer');await symlink(native,global);
@@ -31,7 +31,7 @@ async function fixture(t) {
   await writeFile(join(skill,'SKILL.md'),'---\nname: doomer\n---\n');
   await mkdir(join(codex,'skills'),{recursive:true});await symlink(skill,join(codex,'skills','doomer'));
   const old=join(home,'.agents','skills','doomer-review');await mkdir(old);await writeFile(join(old,'SKILL.md'),'old skill');
-  await writeFile(join(managed,'state.json'),JSON.stringify({version:1,runtime,native:{path:native},executable:global,agents:['codex'],grants:[{scope:'global',api}],hookFiles:[hook]}));
+  await writeFile(join(managed,'state.json'),JSON.stringify({version:1,runtime,native:{path:native,sha256:hash(await readFile(native))},executable:global,binaries:{[native]:hash(await readFile(native))},agents:['codex'],grants:[{scope:'global',api}],hookFiles:[hook]}));
   const env={...process.env,HOME:home,DOOMER_HOME:managed,CODEX_HOME:codex,CLAUDE_CONFIG_DIR:claude,UNINSTALL_AUDIT:audit};
   return {home,managed,global,native,hook,skill,old,audit,env,run:()=>exec(process.execPath,[entry,'uninstall','--json'],{env,cwd:home})};
 }

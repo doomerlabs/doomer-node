@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { join, resolve, dirname } from 'node:path';
-import { mkdir, mkdtemp, rename, rm, lstat, symlink, readFile, readdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, lstat, readFile, readdir } from 'node:fs/promises';
 import { createInterface } from 'node:readline/promises';
 import { agents, hookFile, installHooks, checkHooks, globalSkillPaths } from './hooks.js';
 import { paths, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
@@ -82,25 +82,6 @@ export async function installCLI({ from, version } = {}) {
   });
 }
 
-export async function installGlobalCLI(native) {
-  const bin = process.env.DOOMER_BIN_DIR || join(homedir(), '.local', 'bin');
-  await mkdir(bin, {recursive:true});
-  const target = join(bin, 'doomer');
-  if (await exists(target)) {
-    const info = await lstat(target);
-    if (info.isDirectory()) throw new Error(`${target} is a directory; refusing to replace it.`);
-    const { copyFile, readlink } = await import('node:fs/promises');
-    const backup = `${target}.before-doomer-node-${Date.now()}`;
-    if (info.isSymbolicLink()) await symlink(await readlink(target), backup);
-    else await copyFile(target, backup);
-  }
-  const link = join(bin, `.doomer-${process.pid}-${Date.now()}`);
-  await symlink(native.path, link);
-  try { await rename(link,target); } finally { await rm(link,{force:true}); }
-  await changeState(state => {state.executable=target;state.executableTarget=native.path;});
-  return {executable:target,onPath:(process.env.PATH||'').split(':').includes(bin)};
-}
-
 export async function installSkill(selected) {
   // npm exec launches the same official skills CLI as npx skills add; its own
   // telemetry supplies skills.sh counts. Respect the user's telemetry settings.
@@ -176,14 +157,13 @@ export async function setup(options, { forceSkill = true } = {}) {
   await rm(join(paths().home,'uninstalling.json'),{force:true});
   const installed = await installCLI({ from: options.from });
   const native = await installNative();
-  const command = await installGlobalCLI(native);
   if (forceSkill || !await skillPresent(selected)) {
     console.error('Adding the doomer skill through the official skills CLI…');
     await installSkill(selected);
   }
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
-  await configure(selected, native.path, options);
-  const result = { ...installed, ...command, agents: selected, ...(await doctor()) };
+  await configure(selected, native.executable, options);
+  const result = { ...installed, ...native, agents: selected, ...(await doctor()) };
   if(selected.includes('codex')) {
     result.codexReload=await reloadCodexHooks();
     const message=reloadMessage(result.codexReload);
@@ -198,7 +178,7 @@ export async function doctor() {
   const cli = !!runtime && await exists(runtime);
   const native = !!state.native?.path && await exists(state.native.path);
   const automaticReviews = state.agents.length === 0 || state.native?.watch === true;
-  const hooks = await Promise.all(state.agents.map(agent => checkHooks(agent, state.native?.path)));
+  const hooks = await Promise.all(state.agents.map(agent => checkHooks(agent, state.executable)));
   const skill = await skillPresent(state.agents);
   let executable = false;
   if (cli && state.executable) {
@@ -215,12 +195,11 @@ export async function update(options) {
   if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) throw new Error('Invalid published version.');
   const result = await installCLI({ version });
   const native = await installNative({ update:true });
-  const command = await installGlobalCLI(native);
   const selected = (await readState()).agents;
   await installSkill(selected);
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command.');
-  for (const agent of selected) await installHooks(agent, native.path);
-  const updated = { ...result, ...command, version, ...(await doctor()) };
+  for (const agent of selected) await installHooks(agent, native.executable);
+  const updated = { ...result, ...native, version, ...(await doctor()) };
   if(selected.includes('codex')) {
     updated.codexReload=await reloadCodexHooks();
     const message=reloadMessage(updated.codexReload);

@@ -16,6 +16,8 @@ export function paths(env = process.env) {
   return { home, state: join(home, 'state.json'), bin: join(home, 'bin'), runtime: join(home, 'runtime') };
 }
 
+export const nativePath = () => resolve(process.env.DOOMER_BIN_DIR || join(homedir(), '.local', 'bin'), 'doomer');
+
 export async function readJSON(file, fallback) {
   try { return JSON.parse(await readFile(file, 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return fallback; throw new Error(`Cannot read valid JSON at ${file}: ${error.message}`); }

@@ -85,7 +85,7 @@ export async function main(args) {
       const native = await installNative();
       if (!native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
       for (const agent of selected) {
-        const result = await installHooks(agent, native.path);
+        const result = await installHooks(agent, native.executable);
         console.log(`${agent}: ${result.changed ? 'installed' : 'already configured'} (${result.file})`);
       }
       await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; });

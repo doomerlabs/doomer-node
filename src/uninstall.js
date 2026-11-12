@@ -43,22 +43,25 @@ async function stopWatchers(home, state) {
   }
 }
 
-async function removeGlobalCommand(home,state) {
-  const file=state.executable;
-  if (!file || !['doomer','doomer.cmd'].includes(basename(file)) || !await exists(file)) return {};
-  const info=await lstat(file);
-  let owned=false;
-  if (info.isSymbolicLink()) {
-    const target=resolve(dirname(file),await readlink(file));
-    owned=[state.runtime,state.native?.path,state.executableTarget].includes(target) && inside(home,target);
-  } else if (info.isFile() && file.endsWith('.cmd') && state.runtime) {
-    owned=(await readFile(file,'utf8')).includes(state.runtime) && inside(home,state.runtime);
-  } else if (info.isFile() && state.native?.sha256) {
-    owned=hash(await readFile(file))===state.native.sha256;
+async function removeGlobalCommand(home, state) {
+  const file = state.executable;
+  if (!file || basename(file) !== 'doomer') return {};
+  const binaries = state.binaries || {};
+  const owned = path => dirname(path) === dirname(file) && /^doomer-[a-z0-9][a-z0-9._-]*$/i.test(basename(path)) && binaries[path];
+  const result = {};
+  if (await exists(file)) {
+    const info = await lstat(file);
+    const target = info.isSymbolicLink() ? resolve(dirname(file), await readlink(file)) : '';
+    if (target && owned(target)) {
+      await rm(file);
+      result.removedExecutable = file;
+    } else result.preservedExecutable = file;
   }
-  if (!owned) return {preservedExecutable:file};
-  await rm(file);
-  return {removedExecutable:file};
+  for (const path of Object.keys(binaries)) {
+    if (!owned(path) || !await exists(path)) continue;
+    if ((await lstat(path)).isFile() && hash(await readFile(path)) === binaries[path]) await rm(path);
+  }
+  return result;
 }
 
 async function removeSkill(directory) {

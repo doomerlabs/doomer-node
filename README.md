@@ -36,10 +36,12 @@ Setup selects Claude Code, Codex, both, or standalone reviews, then:
    upload source snapshots to Doomer (https://doomer.ai)?”
 
 The installer also downloads the Go CLI from the official stable channel and
-verifies its archive checksum. It keeps the Go executable privately as
-`doomer-node/bin/doomer-go`; the public `doomer` command points to that Go binary.
+verifies its archive checksum. It installs versioned executables beside a `~/.local/bin/doomer` symlink, for
+example `doomer-2026.11.12.1`. Updates atomically switch the symlink, so running
+watches finish on the old executable while new watches use the new one.
 For a development build, set `DOOMER_NATIVE_BINARY` to the Go executable you
-built. The installer copies it into its private runtime.
+built. The installer gives local builds a version-and-content filename in `~/.local/bin`
+and points `doomer` at it.
 
 The integration requires a Go build with the foreground `watch` command and `watch agent-hook`, on the
 `feat/watch-all-changes` branch until released. An older stable release can run
