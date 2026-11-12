@@ -146,7 +146,7 @@ export async function configure(selected, runtime, options) {
     const service = resolveAPI(options['api-url'], s.api);
     if (s.grants.some(g => g.api === service)) {
       s.identities ??= {};
-      s.identities[service] = process.env.DOOMER_TOKEN || s.identities[service] || `doomer_anon_${randomBytes(32).toString('base64url')}`;
+      s.identities[service] ||= `doomer_anon_${randomBytes(32).toString('base64url')}`;
       if (process.env.DOOMER_CONFIG_DIR) {
         s.credentialDirs ??= {};
         s.credentialDirs[service] = resolve(process.env.DOOMER_CONFIG_DIR);
@@ -162,7 +162,7 @@ export async function grant(api) {
     s.grants = s.grants.filter(g => g.api !== service);
     s.grants.push({ scope: 'global', api: service, approvedAt: new Date().toISOString() });
     s.identities ??= {};
-    s.identities[service] = process.env.DOOMER_TOKEN || s.identities[service] || `doomer_anon_${randomBytes(32).toString('base64url')}`;
+    s.identities[service] ||= `doomer_anon_${randomBytes(32).toString('base64url')}`;
     if (process.env.DOOMER_CONFIG_DIR) {
       s.credentialDirs ??= {};
       s.credentialDirs[service] = resolve(process.env.DOOMER_CONFIG_DIR);
