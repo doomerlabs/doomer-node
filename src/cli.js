@@ -6,6 +6,7 @@ import { installNative } from './native.js';
 import { resolveAPI } from './api.js';
 import { uninstall } from './uninstall.js';
 import { reloadCodexHooks, reloadMessage } from './codex.js';
+import { formatDoctor } from './doctor.js';
 
 const HELP = `Doomer manager ${metadata.version}
 
@@ -60,11 +61,7 @@ export async function main(args) {
     case 'doctor': {
       const result = await doctor();
       if (options.json) console.log(JSON.stringify(result, null, 2));
-      else {
-        console.log(`CLI: ${result.cli ? result.version : 'missing'}; global command: ${result.commandInstalled ? 'installed' : 'missing'}; skill: ${result.skill}`);
-        for (const h of result.hooks) console.log(`${h.agent}: ${h.configured ? 'configured' : 'needs repair'}${h.enabled === false ? ', disabled' : ''}; native activation unverified${h.error ? ` (${h.error})` : ''}`);
-        console.log(result.next);
-      }
+      else console.log(formatDoctor(result));
       return result.ready ? 0 : 1;
     }
     case 'install-hooks': {
