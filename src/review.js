@@ -5,6 +5,7 @@ import { API, endpoint } from './api.js';
 import { paths, hash, readState, readJSON, writeJSON, changeState, locked, metadata, quote } from './system.js';
 import { repositoryRoot, repositoryName, baseline, worktree, fingerprint, diffSnapshots, git } from './snapshot.js';
 import { question } from './setup.js';
+import { hasUploadApproval, serviceLabel } from './permissions.js';
 
 export const sessionPath = (root, agent, id) => join(paths().home, 'sessions', `${hash(JSON.stringify([root, agent, id]))}.json`);
 const receiptPath = (root, api, digest) => join(paths().home, 'reviews', `${hash(JSON.stringify([root, api, digest]))}.json`);
@@ -46,10 +47,10 @@ export async function review(options) {
   if (fingerprint(before) === digest) return { state: 'no_changes', ready: true, repository: root, leads: [] };
   if (!options['approve-upload']) {
     const state = await readState();
-    const permitted = state.grants.some(g => g.repo === root && g.api === api && (!options.agent || g.agents.includes(options.agent)));
+    const permitted = hasUploadApproval(state, api, root, options.agent);
     if (!permitted) {
       if (!process.stdin.isTTY) throw new Error('Upload approval is required. A human can run this review with --approve-upload, or approve the repository during doomer onboard.');
-      const answer = await question(`Upload baseline and current source snapshots from ${root} to ${api} for this Quick review? [y/N] `);
+      const answer = await question(`Upload baseline and current source snapshots to Doomer (${serviceLabel(api)}) for this Quick review? [y/N] `);
       if (!/^y(es)?$/i.test(answer)) throw new Error('Review cancelled; no source was uploaded.');
     }
   }
@@ -125,10 +126,10 @@ export async function hook(input, options) {
   if (digest === session.digest) return {};
   const state = await readState(); const api = endpoint(state.api);
   if (await readJSON(join(paths().home, 'reviewed', `${hash(JSON.stringify([root, api, digest]))}.json`))) return {};
-  const permitted = state.grants.some(g => g.repo === root && g.api === api && g.agents.includes(agent));
+  const permitted = hasUploadApproval(state, api, root, agent);
   if (!permitted) {
     if (input.stop_hook_active) return {};
-    return { decision: 'block', reason: 'Doomer Quick review needs upload approval for this repository. Ask the user to run doomer onboard and approve source uploads, or report that this task was not reviewed. Do not infer consent from hook installation.' };
+    return { decision: 'block', reason: 'Doomer Quick review needs upload approval. Ask the user to run doomer onboard and approve source uploads, or report that this task was not reviewed. Do not infer consent from hook installation.' };
   }
   // This CLI process performs the review itself: skill discovery is not needed.
   const result = await review({ repo: root, agent, session: input.session_id, timeout: '30' });

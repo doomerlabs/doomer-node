@@ -1,11 +1,11 @@
 import { homedir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
-import { mkdir, mkdtemp, rename, rm, lstat, symlink, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm, lstat, symlink, readFile, readdir } from 'node:fs/promises';
 import { createInterface } from 'node:readline/promises';
 import { agents, hookFile, installHooks, checkHooks } from './hooks.js';
-import { paths, metadata, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
+import { paths, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
 import { endpoint } from './api.js';
-import { repositoryRoot } from './snapshot.js';
+import { uploadPrompt } from './permissions.js';
 
 export async function question(text) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error('Interactive setup requires a terminal. Pass --agent claude,codex or --no-hooks.');
@@ -28,25 +28,48 @@ export async function selectAgents(options) {
   return [...new Set(chosen)];
 }
 
-export async function installCLI({ from, version = metadata.version } = {}) {
+async function packageDigest(root) {
+  const files = ['package.json', 'README.md', 'LICENSE'];
+  for (const directory of ['bin', 'src']) {
+    for (const name of await readdir(join(root, directory), { recursive: true })) {
+      const relative = `${directory}/${name}`;
+      if ((await lstat(join(root, relative))).isFile()) files.push(relative);
+    }
+  }
+  const content = await Promise.all(files.sort().map(async name => [name, hash(await readFile(join(root, name)))]));
+  return hash(JSON.stringify(content));
+}
+
+export async function installCLI({ from, version } = {}) {
   const p = paths();
   return locked(join(p.home, 'install'), async () => {
     const state = await readState();
+    const desiredVersion = version || metadata.version;
+    const sourceDigest = version || from ? undefined : await packageDigest(packageRoot);
     let installed = state.runtime;
-    if (from || !installed || state.cliVersion !== version || !(await exists(installed))) {
+    if (from || !installed || state.cliVersion !== desiredVersion || !(await exists(installed)) || (sourceDigest && state.sourceDigest !== sourceDigest)) {
       await mkdir(p.runtime, { recursive: true, mode: 0o700 });
       const temp = await mkdtemp(join(p.runtime, '.install-'));
       let retained = false;
       try {
-        const spec = from ? resolve(from) : `${metadata.name}@${version}`;
+        let spec = from ? resolve(from) : `${metadata.name}@${desiredVersion}`;
+        if (!from && !version) {
+          // Persist the exact package that is running, whether invoked from a
+          // checkout, npx cache, or an installed copy. No public npm release needed.
+          const packed = JSON.parse((await npm(['pack', packageRoot, '--ignore-scripts', '--json', '--pack-destination', temp])).toString());
+          const filename = packed[0]?.filename;
+          if (typeof filename !== 'string' || !/^[\w.-]+\.tgz$/.test(filename)) throw new Error('Invalid npm pack result.');
+          spec = join(temp, filename);
+        }
         await npm(['install', '--prefix', temp, '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', '--', spec], { stdio: ['inherit', 2, 2] });
         const root = join(temp, 'node_modules', '@doomerlabs', 'doomer');
         const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
-        if (pkg.name !== metadata.name || (!from && pkg.version !== version)) throw new Error('Installed package identity does not match.');
+        if (pkg.name !== metadata.name || (!from && pkg.version !== desiredVersion)) throw new Error('Installed package identity does not match.');
         installed = join(root, 'bin', 'doomer.js');
         await run(process.execPath, [installed, '--version']);
         retained = true;
-        await changeState(s => { s.runtime = installed; s.cliVersion = pkg.version; });
+        const installedDigest = await packageDigest(root);
+        await changeState(s => { s.runtime = installed; s.cliVersion = pkg.version; s.sourceDigest = installedDigest; });
       } finally { if (!retained) await rm(temp, { recursive: true, force: true }); }
     }
     const bin = process.env.DOOMER_BIN_DIR || join(homedir(), '.local', 'bin');
@@ -71,7 +94,10 @@ export async function installCLI({ from, version = metadata.version } = {}) {
       try { await rename(link, target); } finally { await rm(link, { force: true }); }
     }
     await changeState(s => { s.executable = target; });
-    return { runtime: installed, executable: target, onPath: (process.env.PATH || '').split(process.platform === 'win32' ? ';' : ':').includes(bin) };
+    const hookLauncher = join(p.bin, 'hook.cjs');
+    await atomicWrite(hookLauncher, `// Stable Doomer hook entry point. Runtime selection lives in private state.\nconst fs = require('node:fs');\nconst path = require('node:path');\nconst { pathToFileURL } = require('node:url');\nconst state = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'state.json'), 'utf8'));\nimport(pathToFileURL(state.runtime).href).catch(error => { console.error(error.message); process.exitCode = 1; });\n`);
+    await changeState(s => { s.hookLauncher = hookLauncher; });
+    return { runtime: installed, hookLauncher, executable: target, onPath: (process.env.PATH || '').split(process.platform === 'win32' ? ';' : ':').includes(bin) };
   });
 }
 
@@ -107,24 +133,23 @@ export async function configure(selected, runtime, options) {
   for (const agent of selected) installed.push(await installHooks(agent, runtime));
   await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; s.api = endpoint(options['api-url'] || s.api); });
   if (options['approve-uploads']) {
-    const repo = await repositoryRoot(options.repo);
-    await grant(repo, selected, options['api-url']);
-  } else if (selected.length && process.stdin.isTTY) {
-    let root;
-    try { root = await repositoryRoot(options.repo); } catch { /* Can onboard outside a Git repo. */ }
-    if (root) {
-      const answer = await question(`Allow Doomer reviews to upload source snapshots from ${root} to ${endpoint(options['api-url'] || (await readState()).api)} for these agents? [y/N] `);
-      if (/^y(es)?$/i.test(answer)) await grant(root, selected, options['api-url']);
+    await grant(options['api-url']);
+  } else if (process.stdin.isTTY) {
+    const state = await readState();
+    const api = endpoint(options['api-url'] || state.api);
+    if (!state.grants.some(g => g.scope === 'global' && g.api === api)) {
+      const answer = await question(uploadPrompt(api));
+      if (/^y(es)?$/i.test(answer)) await grant(api);
     }
   }
   return installed;
 }
 
-export async function grant(root, selected, api) {
+export async function grant(api) {
   await changeState(s => {
     const service = endpoint(api || s.api);
-    s.grants = s.grants.filter(g => !(g.repo === root && g.api === service));
-    s.grants.push({ repo: root, api: service, agents: selected, approvedAt: new Date().toISOString() });
+    s.grants = s.grants.filter(g => g.api !== service);
+    s.grants.push({ scope: 'global', api: service, approvedAt: new Date().toISOString() });
   });
 }
 
@@ -136,7 +161,7 @@ export async function setup(options, { forceSkill = true } = {}) {
     console.error('Adding the doomer skill through the official skills CLI…');
     await installSkill(selected);
   }
-  await configure(selected, installed.runtime, options);
+  await configure(selected, installed.hookLauncher, options);
   return { ...installed, agents: selected, ...(await doctor()) };
 }
 
@@ -144,7 +169,7 @@ export async function doctor() {
   const state = await readState();
   const runtime = state.runtime;
   const cli = !!runtime && await exists(runtime);
-  const hooks = await Promise.all(state.agents.map(agent => checkHooks(agent, runtime)));
+  const hooks = await Promise.all(state.agents.map(agent => checkHooks(agent, state.hookLauncher || runtime)));
   const skill = await skillPresent(state.agents);
   let executable = false;
   if (cli && state.executable) {
@@ -152,7 +177,7 @@ export async function doctor() {
     catch { /* Missing or replaced global command. */ }
     if (process.platform === 'win32') executable = await exists(state.executable);
   }
-  return { ready: cli && executable && skill && hooks.every(h => h.configured && h.enabled), cli, version: state.cliVersion || null, executable: state.executable || null, commandInstalled: executable, skill: skill ? 'installed' : 'missing', hooks, uploadGrants: state.grants.map(({ repo, api, agents }) => ({ repo, api, agents })), next: !cli || !executable || !skill ? 'npx @doomerlabs/doomer onboard' : hooks.some(h => !h.configured) ? 'doomer install-hooks' : hooks.some(h => !h.enabled) ? 'Enable hooks in your agent settings.' : 'Review and trust the hooks in your agent; activation is not verified by installation.' };
+  return { ready: cli && executable && skill && hooks.every(h => h.configured && h.enabled), cli, version: state.cliVersion || null, executable: state.executable || null, commandInstalled: executable, skill: skill ? 'installed' : 'missing', hooks, uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })), next: !cli || !executable || !skill ? 'npx @doomerlabs/doomer onboard' : hooks.some(h => !h.configured) ? 'doomer install-hooks' : hooks.some(h => !h.enabled) ? 'Enable hooks in your agent settings.' : 'Restart your agent, then review and trust the Doomer hooks in /hooks. Configuration on disk does not verify activation.' };
 }
 
 export async function update(options) {
@@ -162,6 +187,6 @@ export async function update(options) {
   const result = await installCLI({ version });
   const selected = (await readState()).agents;
   await installSkill(selected);
-  for (const agent of selected) await installHooks(agent, result.runtime);
+  for (const agent of selected) await installHooks(agent, result.hookLauncher);
   return { ...result, version, ...(await doctor()) };
 }

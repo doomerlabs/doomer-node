@@ -23,7 +23,8 @@ Setup selects Claude Code, Codex, both, or standalone reviews, then:
    come from that CLI's telemetry; user telemetry settings are respected.
 4. Installs agent hooks, preserving unrelated settings and hooks and backing
    up original configuration files.
-5. Offers source-upload approval for the current repository separately.
+5. Offers global source-upload approval separately: “Allow Doomer reviews to
+   upload source snapshots to Doomer (https://doomer.ai)?”
 
 Explicit agent selection supports noninteractive installation:
 
@@ -32,19 +33,21 @@ npx @doomerlabs/doomer install --agent claude,codex
 npx @doomerlabs/doomer install --no-hooks
 ```
 
-A human can add `--approve-uploads --repo /path/to/repo` to authorize uploads
-for the selected agents and repository. Agents must not supply approval flags
+A human can add `--approve-uploads` to authorize all Doomer review uploads to
+the configured service, across repositories and agents. Agents must not supply approval flags
 without the user's authorization. Native hook trust is always user managed.
 
 **Temporary testing source:** installation and updates currently fetch the skill
 from `feat/doomer-node-skill`, so local testing does not require merging skills
 PR #81. After that PR merges, change the source back to `doomerlabs/skills`.
 Publish this package to npm before advertising the public install command.
-For local testing from this checkout:
+For local testing from this checkout, the installer automatically persists the
+package you are running. No npm publication, manual pack, or `--from` is needed:
 
 ```sh
-npm pack
-node bin/doomer.js install --from "$PWD/doomerlabs-doomer-0.1.0.tgz"
+npx . install
+# Or run your current source directly:
+node bin/doomer.js install
 ```
 
 ## Installed the skill directly?
@@ -95,21 +98,25 @@ aggregate review status. Exit codes: 0 ready/no changes, 2 pending, 1 error.
 doomer doctor --json
 doomer install-hooks --agent claude,codex
 doomer update
-doomer revoke --repo /path/to/repo
+doomer revoke
 ```
 
 Hooks use global Claude `settings.json` and Codex `hooks.json`, respecting
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. They call the persistent CLI by absolute
-path, independent of `PATH` and skill discovery:
+path, independent of `PATH` and skill discovery. A stable launcher reads the
+current managed runtime from private state, so normal CLI updates do not change
+the hook command or require rediscovery:
 
 - `UserPromptSubmit` captures the working tree as the task baseline.
-- `Stop` checks for changes and directly runs Quick review when that repository,
-  service, and agent have upload approval. Findings return through a blocking
+- `Stop` checks for changes and directly runs Quick review when upload approval
+  exists for the service. Findings return through a blocking
   hook response. Further edits are reviewed at the next stop.
 
 Read-only turns with no source changes do not submit reviews. Hooks never invent
 approval or modify native trust. Review/trust the definitions through the agent's
-native controls and reload when needed. Cross-repository tool edits are not
+native controls after restarting the agent. Setup prints the exact hook file
+path; an already running Codex TUI may still show its startup configuration.
+Cross-repository tool edits are not
 tracked automatically in this initial version; review each edited repository
 manually. Missing approval, timeouts, and failures must be reported as incomplete
 reviews; hook failure does not prevent the host from continuing. A ready result
@@ -120,7 +127,9 @@ addressed every finding.
 configuration separately from unverified native activation. `install-hooks`
 repairs this Node CLI's hooks. `update` installs the latest npm package, updates
 the skill through the skills CLI, and points configured hooks at the new runtime.
-`revoke` removes saved agent-upload permission, not hosted reviews.
+`revoke` removes saved upload permission for the configured service, not hosted
+reviews. Legacy repository-specific approvals retain their original scope;
+onboard again to accept the new global permission.
 
 Private state, source baselines, and runtime versions live in
 `${XDG_DATA_HOME:-~/.local/share}/doomer-node`. `DOOMER_HOME` changes this root;

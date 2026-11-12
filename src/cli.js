@@ -3,6 +3,7 @@ import { readState, changeState, metadata, paths, exists } from './system.js';
 import { setup, doctor, update, selectAgents, installCLI } from './setup.js';
 import { installHooks } from './hooks.js';
 import { review, getReview, printReview, hook } from './review.js';
+import { endpoint } from './api.js';
 
 const HELP = `Doomer ${metadata.version} — Quick code review
 
@@ -12,12 +13,12 @@ const HELP = `Doomer ${metadata.version} — Quick code review
   doomer install-hooks         Install or repair agent hooks
   doomer doctor                Check CLI, skill and hook readiness (no changes)
   doomer update                Update CLI + skill and repair configured hooks
-  doomer revoke --repo PATH    Revoke saved upload approval for a repository
+  doomer revoke                Revoke saved upload approval for this service
 
 Setup options:
   --agent claude,codex         Agents to configure (interactive when omitted)
   --no-hooks                   Install for standalone reviews
-  --approve-uploads            Explicitly approve agent uploads for --repo
+  --approve-uploads            Approve all Doomer review uploads to this service
   --from PATH.tgz              Install a local npm tarball before publication
 
 Review options:
@@ -56,6 +57,7 @@ export async function main(args) {
       else {
         console.log(`Doomer installed: ${result.executable}`);
         console.log(`Agents: ${result.agents.join(', ') || 'standalone (no hooks)'}`);
+        for (const hook of result.hooks) console.log(`${hook.agent} hooks: ${hook.file}`);
         console.log(result.next);
         if (!result.onPath) console.log(`Add ${paths().home.includes('\\') ? 'the executable directory' : result.executable.slice(0, result.executable.lastIndexOf('/'))} to PATH to run doomer.`);
       }
@@ -74,7 +76,7 @@ export async function main(args) {
     case 'install-hooks': {
       const selected = await selectAgents(options);
       const state = await readState();
-      const runtime = state.runtime && await exists(state.runtime) ? state.runtime : (await installCLI({ from: options.from })).runtime;
+      const runtime = state.hookLauncher && await exists(state.hookLauncher) ? state.hookLauncher : (await installCLI({ from: options.from })).hookLauncher;
       for (const agent of selected) {
         const result = await installHooks(agent, runtime);
         console.log(`${agent}: ${result.changed ? 'installed' : 'already configured'} (${result.file})`);
@@ -94,10 +96,9 @@ export async function main(args) {
       return result.ready ? 0 : 2;
     }
     case 'revoke': {
-      const { repositoryRoot } = await import('./snapshot.js');
-      const root = await repositoryRoot(options.repo);
-      await changeState(s => { s.grants = s.grants.filter(g => g.repo !== root); });
-      console.log(`Removed saved upload approval for ${root}.`);
+      const service = endpoint(options['api-url'] || (await readState()).api);
+      await changeState(s => { s.grants = s.grants.filter(g => g.api !== service); });
+      console.log(`Removed saved upload approval for ${new URL(service).origin}.`);
       return 0;
     }
     case 'hook': {
