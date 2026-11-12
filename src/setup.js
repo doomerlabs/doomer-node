@@ -1,7 +1,8 @@
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
-import { join, resolve, dirname } from 'node:path';
-import { mkdir, mkdtemp, rm, lstat, readFile, readdir } from 'node:fs/promises';
+import { join, resolve, dirname, delimiter } from 'node:path';
+import { mkdir, mkdtemp, rm, lstat, stat, access, readFile, readdir } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { agents, hookFile, installHooks, checkHooks, globalSkillPaths } from './hooks.js';
 import { paths, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
@@ -15,15 +16,43 @@ export async function question(text) {
   const reader = createInterface({ input: process.stdin, output: process.stdout });
   try { return (await reader.question(text)).trim(); } finally { reader.close(); }
 }
+// Look for runnable agent commands, without launching them or treating leftover
+// configuration directories as proof that an agent is installed.
+export async function detectInstalledAgents(env = process.env) {
+  const directories = (env.PATH || '').split(delimiter).filter(Boolean);
+  const extensions = process.platform === 'win32'
+    ? (env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
+    : [''];
+  const detected = [];
+  for (const agent of agents) {
+    let found = false;
+    for (const directory of directories) {
+      for (const extension of extensions) {
+        const file = join(directory, agent + extension);
+        try {
+          await access(file, process.platform === 'win32' ? constants.F_OK : constants.X_OK);
+          if ((await stat(file)).isFile()) { found = true; break; }
+        } catch (error) {
+          if (!['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'ELOOP'].includes(error.code)) throw error;
+        }
+      }
+      if (found) break;
+    }
+    if (found) detected.push(agent);
+  }
+  return detected;
+}
+
 export async function selectAgents(options) {
   if (options['no-hooks']) return [];
   let chosen = options.agent?.split(',').filter(Boolean);
   if (!chosen) {
     const saved = (await readState()).agents;
-    const detected = [];
-    for (const agent of agents) if (await exists(dirname(hookFile(agent)))) detected.push(agent);
+    const detected = await detectInstalledAgents();
     const defaults = saved.length ? saved : detected;
-    const answer = await question(`Agents to set up (claude,codex or none)${defaults.length ? ` [${defaults.join(',')}]` : ''}: `);
+    const detection = `Detected agents: ${detected.length ? detected.join(',') : 'none on PATH'}.`;
+    const previous = saved.length ? `\nPrevious selection: ${saved.map(agent => detected.includes(agent) ? agent : `${agent} (not detected)`).join(',')}.` : '';
+    const answer = await question(`${detection}${previous}\nAgents to set up (claude,codex or none)${defaults.length ? ` [${defaults.join(',')}]` : ''}: `);
     chosen = answer === 'none' ? [] : (answer || defaults.join(',')).split(',').map(s => s.trim()).filter(Boolean);
     if (!answer && !chosen.length) throw new Error('Choose at least one agent, or enter none.');
   }
