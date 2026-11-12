@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline/promises';
 import { agents, hookFile, installHooks, checkHooks, globalSkillPaths } from './hooks.js';
 import { paths, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
 import { endpoint } from './api.js';
-import { uploadPrompt } from './permissions.js';
+import { uploadPrompt, acceptsUploadAnswer } from './permissions.js';
 import { installNative } from './native.js';
 
 export async function question(text) {
@@ -137,7 +137,7 @@ export async function configure(selected, runtime, options) {
     const api = endpoint(options['api-url'] || state.api);
     if (!state.grants.some(g => g.scope === 'global' && g.api === api)) {
       const answer = await question(uploadPrompt(api));
-      if (/^y(es)?$/i.test(answer)) await grant(api);
+      if (acceptsUploadAnswer(answer)) await grant(api);
     }
   }
   return installed;
