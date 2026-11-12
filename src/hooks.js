@@ -4,8 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { atomicWrite, quote, readJSON, locked, paths, changeState } from './system.js';
 
 export const agents = ['claude', 'codex'];
-export const events = ['UserPromptSubmit', 'Stop'];
-export const eventsFor = () => events;
+export const events = ['UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd'];
+export const eventsFor = agent => ['UserPromptSubmit', 'Stop', agent === 'codex' ? 'Interrupt' : 'SessionEnd'];
 const retiredEvents = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure'];
 const marker = '--owner=doomer-node';
 export function hookFile(agent) {
@@ -73,13 +73,13 @@ export function mergeHooks(config, agent, executable = join(paths().bin, 'doomer
   next.hooks ??= {};
   for (const event of [...events, ...retiredEvents]) {
     const kept = (next.hooks[event] || []).map(group => ({ ...group, hooks: group.hooks.filter(h => !owned(h)) })).filter(g => g.hooks.length);
-    if (retiredEvents.includes(event)) {
+    if (retiredEvents.includes(event) || !eventsFor(agent).includes(event)) {
       if (kept.length) next.hooks[event] = kept;
       else delete next.hooks[event];
       continue;
     }
-    const handler = { type: 'command', command: hookCommand(agent, executable), timeout: event === 'Stop' ? 60 : 45 };
-    if (agent === 'codex') handler.statusMessage = event === 'Stop' ? 'Doomer: check review' : 'Doomer: start watcher';
+    const handler = { type: 'command', command: hookCommand(agent, executable), timeout: event === 'Stop' ? 60 : event === 'UserPromptSubmit' ? 45 : 15 };
+    if (agent === 'codex') handler.statusMessage = event === 'UserPromptSubmit' ? 'Doomer: start turn worker' : 'Doomer: finish turn worker';
     next.hooks[event] = [...kept, { hooks: [handler] }];
   }
   return next;

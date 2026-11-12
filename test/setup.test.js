@@ -11,7 +11,7 @@ test('global install replaces the old CLI, installs skills via official CLI, rep
   t.after(() => rm(home, { recursive: true, force: true }));
   const npm = join(home, 'fake-npm.mjs');
   const native = join(home, 'fake-go');
-  await writeFile(native, '#!/usr/bin/env node\nconsole.log(process.argv.includes("--help") ? "--all-changes --manager-home" : "doomer 2026.11.10.3");\n', {mode:0o755});
+  await writeFile(native, '#!/usr/bin/env node\nconsole.log(process.argv.includes("--help") ? "--all-changes --manager-home turn-worker" : "doomer 2026.11.10.3");\n', {mode:0o755});
   await writeFile(npm, `
 import { cp, mkdir, writeFile, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';

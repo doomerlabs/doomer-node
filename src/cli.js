@@ -3,7 +3,7 @@ import { readState, changeState, metadata, paths } from './system.js';
 import { setup, doctor, update, selectAgents } from './setup.js';
 import { installHooks } from './hooks.js';
 import { review } from './review.js';
-import { installNative, nativeHook, stopNativeWatchers } from './native.js';
+import { installNative } from './native.js';
 import { resolveAPI } from './api.js';
 import { uninstall } from './uninstall.js';
 import { reloadCodexHooks, reloadMessage } from './codex.js';
@@ -83,7 +83,7 @@ export async function main(args) {
     case 'install-hooks': {
       const selected = await selectAgents(options);
       const native = await installNative();
-      if (!native.directHooks) throw new Error('The Go CLI needs direct agent-hook support. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
+      if (!native.turnWorkers) throw new Error('The Go CLI needs in-memory turn-worker support. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
       for (const agent of selected) {
         const result = await installHooks(agent, native.path);
         console.log(`${agent}: ${result.changed ? 'installed' : 'already configured'} (${result.file})`);
@@ -121,19 +121,7 @@ export async function main(args) {
     case 'revoke': {
       const service = resolveAPI(options['api-url'], (await readState()).api);
       await changeState(s => { s.grants = s.grants.filter(g => g.api !== service); });
-      await stopNativeWatchers(service);
       console.log(`Removed saved upload approval for ${new URL(service).origin}.`);
-      return 0;
-    }
-    case 'hook': {
-      try {
-        let data = '';
-        for await (const part of process.stdin) { data += part; if (data.length > 1024 * 1024) throw new Error('Hook input too large.'); }
-        console.log(JSON.stringify(await nativeHook(JSON.parse(data), options)));
-      } catch (error) {
-        console.error(`Doomer hook: ${error.message}`);
-        console.log(JSON.stringify({ systemMessage: `Doomer Quick review was not completed: ${error.message}` }));
-      }
       return 0;
     }
     default: throw new Error(`Unknown command ${command}. Run doomer --help.`);

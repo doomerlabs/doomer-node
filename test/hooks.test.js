@@ -23,6 +23,10 @@ test('hook repair is idempotent and preserves old Doomer, unrelated hooks, permi
   assert.ok(!command.includes('hook.cjs'));
   assert.deepEqual(next.hooks.PreToolUse,[{matcher:'.*',hooks:[{command:'echo keep tool hook'}]}]);
   assert.equal(next.hooks.PostToolUse,undefined);
+  assert.ok(next.hooks.SessionEnd, 'Claude cleanup hook installed');
+  const codex = mergeHooks({}, 'codex', '/go/doomer');
+  assert.ok(codex.hooks.Interrupt, 'Codex interrupted-turn cleanup installed');
+  assert.equal(codex.hooks.SessionEnd, undefined);
 });
 
 test('rejects malformed settings before changing them', () => {

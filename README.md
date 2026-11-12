@@ -41,7 +41,7 @@ verifies its archive checksum. It keeps the Go executable privately as
 For a development build, set `DOOMER_NATIVE_BINARY` to the Go executable you
 built. The installer copies it into its private runtime.
 
-The two-hook integration requires a Go build with `watch --all-changes` and `watch agent-hook`, on the
+The turn-worker integration requires a Go build with `watch agent-hook` and `watch turn-worker`, on the
 `feat/watch-all-changes` branch until released. An older stable release can run
 manual reviews, but doctor reports automatic reviews unavailable rather than
 silently claiming the watcher is ready.
@@ -129,11 +129,14 @@ directly using `watch agent-hook`; Node is only used for management commands.
 The Go hook reads saved upload approvals and inherits `DOOMER_API_URL` and
 `DOOMER_TOKEN` from the agent environment:
 
-- `UserPromptSubmit` starts or reuses a detached Go watcher and forwards the
-  prompt and session context. The Go watcher observes the filesystem and reviews
-  all settled changes, including manual edits and other processes' changes.
-- `Stop` asks the Go hook to capture the latest state and wait for Quick results.
-  Findings return through its native blocking hook response.
+- `UserPromptSubmit` starts an independent Go worker for that agent, session, and
+  turn. It discovers repositories recursively beneath the chat directory.
+- The worker keeps snapshots, pending requests, and results in memory. It does
+  not create runtime JSON, PID files, lock directories, or disk upload caches.
+- `Stop` drains the final changes, returns the results, and exits that worker.
+  Codex `Interrupt` and Claude `SessionEnd` also clean up their turn workers.
+- Linux workers use abstract Unix sockets with no filesystem entry. macOS uses
+  temporary socket endpoints that are removed when the worker exits.
 
 Pre/post-tool hooks are not installed or invoked by this flow. Repair removes
 only this Node installer's old tool-hook entries, preserving other hooks.
@@ -180,10 +183,10 @@ If you replaced the global command yourself, uninstall reports and preserves
 that replacement. Uninstall reloads removed hooks in a reachable local Codex
 server and reports when a restart is required instead.
 
-Private state, source baselines, and runtime versions live in
+Installed binaries, saved approvals, credentials, and manager versions live in
 `${XDG_DATA_HOME:-~/.local/share}/doomer-node`. `DOOMER_HOME` changes this root;
-`DOOMER_BIN_DIR` changes the command directory. Old runtime versions and backups
-are retained for recovery. The old CLI's state is separate. Its `prepare`,
+`DOOMER_BIN_DIR` changes the command directory. Old manager versions and backups
+are retained for recovery; turn state and source snapshots stay in memory. The old CLI's state is separate. Its `prepare`,
 `task`, and `agent-hook` commands are not implemented here: keep legacy skills
 and hooks on their original private runtime until retiring them.
 
