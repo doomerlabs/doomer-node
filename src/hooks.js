@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { atomicWrite, entry, quote, readJSON, locked, paths } from './system.js';
+import { atomicWrite, entry, quote, readJSON, locked, paths, changeState } from './system.js';
 
 export const agents = ['claude', 'codex'];
 export const events = ['UserPromptSubmit', 'Stop'];
@@ -33,6 +33,40 @@ function validate(config) {
 }
 const owned = handler => typeof handler.command === 'string' && handler.command.split(/\s+/).includes(marker);
 
+export function globalSkillPaths() {
+  return [...new Set([join(homedir(), '.agents', 'skills', 'doomer'),
+    ...agents.map(agent => join(dirname(hookFile(agent)), 'skills', 'doomer'))])];
+}
+
+export function withoutOwnedHooks(config) {
+  validate(config);
+  const next = structuredClone(config);
+  if (!next.hooks) return next;
+  for (const event of [...events, ...retiredEvents]) {
+    if (!next.hooks[event]) continue;
+    const kept = next.hooks[event].map(group => ({...group, hooks:group.hooks.filter(handler => !owned(handler))})).filter(group => group.hooks.length);
+    if (kept.length) next.hooks[event] = kept;
+    else delete next.hooks[event];
+  }
+  if (!Object.keys(next.hooks).length) delete next.hooks;
+  return next;
+}
+
+export async function removeHooks(file) {
+  // Read first: an absent configuration is a no-op, not a directory to create.
+  let original;
+  try { original = await readFile(file, 'utf8'); } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+  return locked(file, async () => {
+    original = await readFile(file, 'utf8');
+    const config = JSON.parse(original);
+    const next = withoutOwnedHooks(config);
+    if (JSON.stringify(next) === JSON.stringify(config)) return false;
+    await atomicWrite(`${file}.before-doomer-node-uninstall-${Date.now()}`, original);
+    await atomicWrite(file, `${JSON.stringify(next, null, 2)}\n`);
+    return true;
+  });
+}
+
 export function mergeHooks(config, agent, executable = entry) {
   validate(config);
   const next = structuredClone(config);
@@ -52,6 +86,7 @@ export function mergeHooks(config, agent, executable = entry) {
 }
 export async function installHooks(agent, executable = entry) {
   const file = hookFile(agent);
+  await changeState(state => { state.hookFiles = [...new Set([...(state.hookFiles || []), file])]; });
   return locked(file, async () => {
     let original;
     try { original = await readFile(file, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }

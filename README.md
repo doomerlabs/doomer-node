@@ -1,7 +1,8 @@
 # Doomer Node CLI
 
 The management CLI for Doomer. npm package: `@doomerlabs/doomer`.
-Installed executable: `doomer`. The Go CLI handles filesystem watching, source
+The globally installed `doomer` executable is the Go CLI. This npm package runs
+as `npx @doomerlabs/doomer` to manage it. The Go CLI handles filesystem watching, source
 capture, uploads, and Quick reviews. The site, old installer, and `doomer-review`
 skill remain separate.
 
@@ -16,8 +17,8 @@ npx @doomerlabs/doomer install
 
 Setup selects Claude Code, Codex, both, or standalone reviews, then:
 
-1. Installs a persistent private copy of this package.
-2. Replaces `~/.local/bin/doomer` with a link to it, backing up an existing
+1. Installs a persistent private copy of the manager and the native Go CLI.
+2. Replaces `~/.local/bin/doomer` with a link to the Go CLI, backing up an existing
    command. Add `~/.local/bin` to `PATH` if absent.
 3. Adds the global skill through the official skills CLI, equivalent to
    `npx skills add 'doomerlabs/skills#feat/doomer-node-skill' --skill doomer --global`. Skills.sh counts
@@ -29,7 +30,7 @@ Setup selects Claude Code, Codex, both, or standalone reviews, then:
 
 The installer also downloads the Go CLI from the official stable channel and
 verifies its archive checksum. It keeps the Go executable privately as
-`doomer-node/bin/doomer-go`; the public `doomer` command remains the manager.
+`doomer-node/bin/doomer-go`; the public `doomer` command points to that Go binary.
 For a development build, set `DOOMER_NATIVE_BINARY` to the Go executable you
 built. The installer copies it into its private runtime.
 
@@ -78,9 +79,9 @@ the work independently of skill discovery.
 
 ```sh
 doomer review
-doomer review --base origin/main --json
+doomer review --base origin/main --format json
 doomer review --wait none
-doomer review get REVIEW_ID
+doomer review get REVIEW_ID --workspace
 ```
 
 Reviews are delegated to the installed Go CLI. The manager requests
@@ -107,10 +108,10 @@ format. Manual review submission and result handling follow that CLI.
 ## Hooks and maintenance
 
 ```sh
-doomer doctor --json
-doomer install-hooks --agent claude,codex
-doomer update
-doomer revoke
+npx @doomerlabs/doomer doctor --json
+npx @doomerlabs/doomer install-hooks --agent claude,codex
+npx @doomerlabs/doomer update
+npx @doomerlabs/doomer revoke
 ```
 
 Hooks use global Claude `settings.json` and Codex `hooks.json`, respecting
@@ -146,6 +147,23 @@ the skill through the skills CLI, and updates the native CLI.
 `revoke` removes saved upload permission for the configured service, not hosted
 reviews. Legacy repository-specific approvals retain their original scope;
 onboard again to accept the new global permission.
+
+## Uninstall
+
+```sh
+npx @doomerlabs/doomer uninstall
+```
+
+From an unpublished checkout, use `node bin/doomer.js uninstall` or package it
+with `npm pack` and run `npx --yes ./doomerlabs-doomer-0.1.0.tgz uninstall`.
+
+Uninstall disables the managed hooks, stops its native watchers, removes the
+global `doomer` link when it still points to a managed executable, removes the
+new global `doomer` skill, and deletes the private runtimes, source snapshots,
+credentials, and local installation state. It does not remove hosted reviews,
+the old `doomer-review` skill, unrelated agent settings, or recovery backups.
+If you replaced the global command yourself, uninstall reports and preserves
+that replacement. Restart your agent to discard its cached hook definitions.
 
 Private state, source baselines, and runtime versions live in
 `${XDG_DATA_HOME:-~/.local/share}/doomer-node`. `DOOMER_HOME` changes this root;

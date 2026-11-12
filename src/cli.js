@@ -5,16 +5,20 @@ import { installHooks } from './hooks.js';
 import { review } from './review.js';
 import { installNative, nativeHook, stopNativeWatchers } from './native.js';
 import { endpoint } from './api.js';
+import { uninstall } from './uninstall.js';
 
-const HELP = `Doomer ${metadata.version} — Quick code review
+const HELP = `Doomer manager ${metadata.version}
 
-  doomer install               Install CLI + skill and onboard selected agents
-  doomer onboard               Complete setup after installing the skill directly
-  doomer review [get ID]       Review changes, or resume an existing review
-  doomer install-hooks         Install or repair agent hooks
-  doomer doctor                Check CLI, skill and hook readiness (no changes)
-  doomer update                Update CLI + skill and repair configured hooks
-  doomer revoke                Revoke saved upload approval for this service
+Usage: npx @doomerlabs/doomer <command>
+
+  install                      Install CLI + skill and onboard selected agents
+  onboard                      Complete setup after installing the skill directly
+  review [get ID]              Delegate a review to the Go CLI
+  install-hooks                Install or repair agent hooks
+  doctor                       Check CLI, skill and hook readiness (no changes)
+  update                       Update CLI + skill and repair configured hooks
+  uninstall                    Remove managed hooks, skill, CLI and local data
+  revoke                       Revoke saved upload approval for this service
 
 Setup options:
   --agent claude,codex         Agents to configure (interactive when omitted)
@@ -91,6 +95,16 @@ export async function main(args) {
       const result = await update(options);
       console.log(options.json ? JSON.stringify(result, null, 2) : `Doomer updated to ${result.version}. ${result.next}`);
       return result.ready ? 0 : 1;
+    }
+    case 'uninstall': {
+      const result=await uninstall();
+      if(options.json)console.log(JSON.stringify(result,null,2));
+      else {
+        console.log('Doomer uninstalled. Managed hooks, skills and local installation data removed.');
+        if(result.removedExecutable)console.log(`Removed ${result.removedExecutable}`);
+        if(result.preservedExecutable)console.log(`Preserved replacement executable: ${result.preservedExecutable}`);
+      }
+      return 0;
     }
     case 'review': {
       await review(options, subcommand === 'get' ? id : undefined);

@@ -80,7 +80,7 @@ export async function installNative({ update = false } = {}) {
 }
 
 export function nativeContext(state, agent = 'manual', api = state.api) {
-  if (!state.native?.path) throw new Error('The Go CLI is missing. Run doomer onboard.');
+  if (!state.native?.path) throw new Error('The Go CLI is missing. Run npx @doomerlabs/doomer onboard.');
   const service = endpoint(api);
   const profile = `node-${agent}`;
   const config = join(paths().home, 'native-state');
@@ -94,7 +94,7 @@ export function nativeContext(state, agent = 'manual', api = state.api) {
 export async function syncNativeConsent(agent, api, repo, oneReview = false) {
   let state = await readState();
   const context = nativeContext(state, agent, api);
-  if (!oneReview && !hasUploadApproval(state, context.api, repo, agent === 'manual' ? undefined : agent)) throw new Error('Doomer upload approval is required; run doomer onboard.');
+  if (!oneReview && !hasUploadApproval(state, context.api, repo, agent === 'manual' ? undefined : agent)) throw new Error('Doomer upload approval is required; run npx @doomerlabs/doomer onboard.');
   state = await changeState(s => {
     s.identities ??= {};
     s.identities[context.api] ||= `doomer_anon_${randomBytes(32).toString('base64url')}`;
@@ -136,6 +136,7 @@ async function ensureWatcher(context, repo) {
   const state = await readState();
   if (!state.native?.allChanges) throw new Error('The installed Go CLI needs --all-changes support. Build the feat/watch-all-changes Go branch and reinstall with DOOMER_NATIVE_BINARY pointing to that binary.');
   await locked(join(context.root, 'node-start'), async () => {
+    if (await exists(join(paths().home,'uninstalling.json'))) throw new Error('Doomer is being uninstalled.');
     if (await exists(join(context.root, 'paused.json'))) throw new Error('Doomer watching is paused. Resume it explicitly.');
     try {
       const status = JSON.parse((await run(context.binary, [...context.args, 'watch', 'status', repo, '--json'], { env: context.env })).toString());
@@ -167,6 +168,7 @@ async function ensureWatcher(context, repo) {
 }
 
 export async function nativeHook(input, options) {
+  if (await exists(join(paths().home,'uninstalling.json'))) return {};
   if (!['codex', 'claude'].includes(options.agent) || !input.session_id || !input.cwd) return {};
   if (!['UserPromptSubmit','Stop'].includes(input.hook_event_name)) return {};
   const repo = await workingRepository(input);

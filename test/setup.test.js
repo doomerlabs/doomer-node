@@ -42,7 +42,7 @@ else process.exit(1);
   assert.equal(JSON.parse((await cli(['install', '--agent', 'codex', '--json'])).stdout).ready, true);
   const state = JSON.parse(await readFile(join(home, 'state', 'state.json')));
   assert.equal(state.executable, join(bin, 'doomer'));
-  assert.equal((await exec(process.execPath, [state.executable, '--version'], { env })).stdout.trim(), '0.1.0');
+  assert.equal((await exec(state.executable, ['--version'], { env })).stdout.trim(), 'doomer 2026.11.10.3');
   assert.ok((await readdir(bin)).some(name => name.startsWith('doomer.before-doomer-node-')));
   const hooks = JSON.parse(await readFile(join(codex, 'hooks.json')));
   assert.equal(hooks.trust, 'keep'); assert.equal(hooks.hooks.Stop[0].hooks[0].command, 'echo keep');

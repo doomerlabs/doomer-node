@@ -18,7 +18,7 @@ export async function review(options, id) {
     let approved = hasUploadApproval(state, service, repo);
     if (!approved && options['approve-upload']) approved = true;
     if (!approved) {
-      if (!process.stdin.isTTY) throw new Error('Upload approval is required. Run doomer onboard or explicitly authorize this review with --approve-upload.');
+      if (!process.stdin.isTTY) throw new Error('Upload approval is required. Run npx @doomerlabs/doomer onboard or explicitly authorize this review with --approve-upload.');
       approved = /^y(es)?$/i.test(await question(`Upload source snapshots to Doomer (${serviceLabel(service)}) for this Quick review? [y/N] `));
     }
     if (!approved) throw new Error('Review cancelled; no source uploaded.');
