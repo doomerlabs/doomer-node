@@ -217,7 +217,7 @@ export async function doctor() {
   const runtime = state.runtime;
   const cli = !!runtime && await exists(runtime);
   const inspection = await inspectNativeInstallation(state);
-  const automaticReviews = state.agents.length === 0 || state.native?.watch === true;
+  const automaticReviews = inspection.capabilities.watchAgentHook;
   const hooks = await Promise.all(state.agents.map(agent => checkHooks(agent, state.executable)));
   const skill = await skillPresent(state.agents);
   const ready = cli && inspection.nativeStatus === 'available' && automaticReviews && inspection.commandInstalled && skill && hooks.every(h => h.configured && h.enabled);

@@ -42,8 +42,16 @@ export function archiveBinary(archive) {
   return binary;
 }
 
-async function supportsWatch(binary) {
-  try { return (await run(binary, ['watch', '--help'])).toString().includes('Watch recursively and review settled changes until stopped'); }
+export async function supportsWatch(binary) {
+  try {
+    const options = { timeout: 5000, maxBytes: 16384 };
+    const [watch, hook] = await Promise.all([
+      run(binary, ['watch', '--help'], options),
+      run(binary, ['watch', 'agent-hook', '--help'], options),
+    ]);
+    return watch.toString().includes('Watch recursively and review settled changes until stopped')
+      && hook.toString().includes('--manager-home') && hook.toString().includes('--agent');
+  }
   catch { return false; }
 }
 

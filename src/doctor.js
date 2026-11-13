@@ -1,5 +1,6 @@
 import { access, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
+import { supportsWatch } from './native.js';
 import { delimiter, dirname, join, basename } from 'node:path';
 import { metadata, nativePath, developmentInstall, run } from './system.js';
 
@@ -41,7 +42,8 @@ export async function inspectNativeInstallation(state, env = process.env) {
   if (resolvedCommand && target) {
     try { onPath = await realpath(resolvedCommand) === target; } catch { /* Broken PATH entry. */ }
   }
-  return { native: target !== null, nativeStatus, nativeVersion, recordedNativeVersion: state.native?.version || null,
+  const capabilities = { watchAgentHook: nativeStatus === 'available' && await supportsWatch(binary) };
+  return { capabilities, native: target !== null, nativeStatus, nativeVersion, recordedNativeVersion: state.native?.version || null,
     commandInstalled: commandStatus === 'available', commandStatus, globalCommand: command, resolvedCommand, onPath };
 }
 

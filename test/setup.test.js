@@ -11,7 +11,7 @@ test('global install replaces the old CLI, installs skills via official CLI, rep
   t.after(() => rm(home, { recursive: true, force: true }));
   const npm = join(home, 'fake-npm.mjs');
   const native = join(home, 'fake-go');
-  await writeFile(native, '#!/usr/bin/env node\nconsole.log(process.argv.includes("--help") ? "Watch recursively and review settled changes until stopped" : "doomer 2026.11.10.3");\n', {mode:0o755});
+  await writeFile(native, '#!/usr/bin/env node\nconsole.log(process.argv.includes("--help") ? "Watch recursively and review settled changes until stopped --manager-home --agent" : "doomer 2026.11.10.3");\n', {mode:0o755});
   await writeFile(npm, `
 import { cp, mkdir, writeFile, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -42,6 +42,7 @@ else process.exit(1);
   assert.equal(JSON.parse((await cli(['install', '--agent', 'codex', '--json'])).stdout).ready, true);
   const state = JSON.parse(await readFile(join(home, 'state', 'state.json')));
   assert.equal(state.executable, join(bin, 'doomer'));
+  assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).capabilities.watchAgentHook, true);
   assert.equal((await exec(state.executable, ['--version'], { env })).stdout.trim(), 'doomer 2026.11.10.3');
   assert.equal((await lstat(state.executable)).isSymbolicLink(), true);
   assert.equal(state.native.path, join(bin, 'doomer-dev'));

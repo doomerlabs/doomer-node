@@ -24,7 +24,7 @@ test('replacing doomer-dev preserves a running watch and its open executable', a
   const source = join(home, 'source');
   const env = { ...process.env, DOOMER_HOME: join(home, 'state'), DOOMER_BIN_DIR: join(home, 'bin'), DOOMER_NATIVE_BINARY: source };
   const install = async () => JSON.parse((await exec(process.execPath, ['--input-type=module', '-e', 'import {installNative} from "./src/native.js"; console.log(JSON.stringify(await installNative()));'], { env })).stdout);
-  const script = tag => `#!${process.execPath}\nif (process.argv.includes('--hold')) { console.log('${tag}'); setInterval(()=>{},1000); } else console.log(process.argv.includes('--help') ? 'Watch recursively and review settled changes until stopped' : 'doomer dev');\n`;
+  const script = tag => `#!${process.execPath}\nif (process.argv.includes('--hold')) { console.log('${tag}'); setInterval(()=>{},1000); } else console.log(process.argv.includes('--help') ? 'Watch recursively and review settled changes until stopped --manager-home --agent' : 'doomer dev');\n`;
   await writeFile(source, script('first'), { mode: 0o755 });
   const first = await install();
   const original = await readFile(first.path);
@@ -62,7 +62,7 @@ test('development install preserves production executable and uses separate stat
   await writeFile(production, 'production bytes');
   await symlink(production, join(bin, 'doomer'));
   const source = join(root, 'local-build');
-  await writeFile(source, `#!${process.execPath}\nconsole.log(process.argv.includes('--help') ? 'Watch recursively and review settled changes until stopped --watch-root' : 'doomer dev');\n`, { mode: 0o755 });
+  await writeFile(source, `#!${process.execPath}\nconsole.log(process.argv.includes('--help') ? 'Watch recursively and review settled changes until stopped --manager-home --agent --watch-root' : 'doomer dev');\n`, { mode: 0o755 });
   process.env.DOOMER_DEV_INSTALL = '1';
   process.env.DOOMER_DEV_HOME = join(root, 'dev-state');
   process.env.DOOMER_HOME = join(root, 'production-state');
@@ -82,7 +82,7 @@ test('production-local and development profiles cannot overwrite each other', as
     const home = await mkdtemp(join(tmpdir(), 'doomer-owner-'));
     t.after(() => rm(home, { recursive: true, force: true }));
     const source = join(home, 'source');
-    await writeFile(source, `#!${process.execPath}\nconsole.log(process.argv.includes('--help') ? 'Watch recursively and review settled changes until stopped' : 'doomer dev');\n`, { mode: 0o755 });
+    await writeFile(source, `#!${process.execPath}\nconsole.log(process.argv.includes('--help') ? 'Watch recursively and review settled changes until stopped --manager-home --agent' : 'doomer dev');\n`, { mode: 0o755 });
     const env = { ...process.env, DOOMER_HOME: join(home, 'prod'), DOOMER_DEV_HOME: join(home, 'dev'), DOOMER_BIN_DIR: join(home, 'bin'), DOOMER_NATIVE_BINARY: source };
     const install = dev => exec(process.execPath, ['--input-type=module', '-e', 'import {installNative} from "./src/native.js"; console.log(JSON.stringify(await installNative()));'], { env: { ...env, DOOMER_DEV_INSTALL: dev ? '1' : '0' } });
     const first = JSON.parse((await install(firstDev)).stdout);
