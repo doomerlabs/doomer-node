@@ -93,30 +93,10 @@ test('production-local and development profiles cannot overwrite each other', as
 });
 
 test('CLI-only upgrade check is read-only and applying preserves hooks and skills', async t => {
-  const { mkdir } = await import('node:fs/promises');
-  const { createHash } = await import('node:crypto');
-  const { upgradeNative } = await import('../src/native.js');
   const home = await mkdtemp(join(tmpdir(), 'doomer-cli-upgrade-'));
-  const keys = ['DOOMER_HOME','DOOMER_BIN_DIR','DOOMER_NATIVE_BINARY','DOOMER_DEV_INSTALL'];
-  const saved = Object.fromEntries(keys.map(k => [k,process.env[k]]));
-  const fetchBefore = globalThis.fetch;
-  t.after(async () => { globalThis.fetch = fetchBefore; for(const k of keys){if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];} await rm(home,{recursive:true,force:true}); });
-  process.env.DOOMER_HOME=join(home,'state');process.env.DOOMER_BIN_DIR=join(home,'bin');delete process.env.DOOMER_NATIVE_BINARY;delete process.env.DOOMER_DEV_INSTALL;
-  await mkdir(join(home,'bin'),{recursive:true});await mkdir(join(home,'state'),{recursive:true});
-  const old = Buffer.from('previous binary'); const oldPath=join(home,'bin','doomer-2026.11.1.1');await writeFile(oldPath,old);
-  const hook=join(home,'hooks.json');const skill=join(home,'SKILL.md');await writeFile(hook,'original hooks');await writeFile(skill,'original skill');
-  const hash=data=>createHash('sha256').update(data).digest('hex');
-  const initial={version:1,agents:['codex'],grants:[{scope:'global',api:'https://example.test/api'}],runtime:'/unchanged/manager.js',native:{path:oldPath,version:'2026.11.1.1',source:'stable',sha256:hash(old)},binaries:{[oldPath]:hash(old)}};
-  const statePath=join(home,'state','state.json');const before=JSON.stringify(initial);await writeFile(statePath,before);
-  const binary=Buffer.from(`#!${process.execPath}\nconsole.log(process.argv.includes('--version') ? 'doomer 2026.11.2.1' : 'Watch recursively and review settled changes until stopped --manager-home --agent');\n`);
-  const header=Buffer.alloc(512);header.write('doomer');header.write(binary.length.toString(8).padStart(11,'0')+'\0',124);header[156]=48;
-  const archive=gzipSync(Buffer.concat([header,binary,Buffer.alloc((512-binary.length%512)%512),Buffer.alloc(1024)]));
-  const platform=`${process.platform}_${{x64:'amd64',arm64:'arm64'}[process.arch]}`;
-  const url=`https://downloads.doomer.ai/cli/releases/2026.11.2.1/doomer_2026.11.2.1_${platform}.tar.gz`;
-  let archives=0;
-  globalThis.fetch=async address=>{if(address.endsWith('stable.json'))return new Response(JSON.stringify({schema_version:1,version:'2026.11.2.1',assets:{[platform]:{url,sha256:hash(archive)}}}));archives++;assert.equal(address,url);return new Response(archive);};
-  assert.equal((await upgradeNative({check:true})).state,'update_available');assert.equal(archives,0);assert.equal(await readFile(statePath,'utf8'),before);
-  assert.equal((await upgradeNative()).state,'updated');assert.equal(archives,1);
-  const after=JSON.parse(await readFile(statePath,'utf8'));assert.deepEqual(after.agents,initial.agents);assert.deepEqual(after.grants,initial.grants);assert.equal(after.runtime,initial.runtime);
-  assert.equal(await readFile(hook,'utf8'),'original hooks');assert.equal(await readFile(skill,'utf8'),'original skill');
+  t.after(() => rm(home, {recursive:true, force:true}));
+  const fixture = new URL('./fixtures/cli-upgrade.mjs', import.meta.url);
+  const { fileURLToPath } = await import('node:url');
+  await exec(process.execPath, [fileURLToPath(fixture), home], {env: {...process.env,
+    DOOMER_HOME:join(home,'state'), DOOMER_BIN_DIR:join(home,'bin'), DOOMER_NATIVE_BINARY:'', DOOMER_DEV_INSTALL:'0'}});
 });

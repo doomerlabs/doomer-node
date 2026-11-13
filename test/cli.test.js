@@ -15,3 +15,10 @@ test('manager rejects review commands and review-only options', async () => {
     await assert.rejects(exec(process.execPath, [entry, 'doctor', option, 'value']), /Unknown option/);
   }
 });
+
+
+test('check cannot silently mutate installations through other commands', async () => {
+  for (const command of ['install', 'onboard', 'uninstall', 'revoke', 'update', 'install-hooks']) {
+    await assert.rejects(exec(process.execPath, [entry, command, '--check']), /--check is supported only by upgrade/);
+  }
+});
