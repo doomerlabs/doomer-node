@@ -32,3 +32,18 @@ test('hook repair is idempotent and preserves old Doomer, unrelated hooks, permi
 test('rejects malformed settings before changing them', () => {
   for (const config of [[], { hooks: [] }, { hooks: { Stop: {} } }, { hooks: { Stop: [{ hooks: [null] }] } }]) assert.throws(() => mergeHooks(config, 'codex'), /Invalid/);
 });
+
+test('production and development hook slots stay stable across reinstalls', t => {
+  const previous = process.env.DOOMER_DEV_INSTALL;
+  t.after(() => { if (previous === undefined) delete process.env.DOOMER_DEV_INSTALL; else process.env.DOOMER_DEV_INSTALL = previous; });
+  delete process.env.DOOMER_DEV_INSTALL;
+  const prod = mergeHooks({}, 'codex', '/bin/doomer', '/workspace');
+  process.env.DOOMER_DEV_INSTALL = '1';
+  const both = mergeHooks(prod, 'codex', '/bin/doomer-dev', '/test-apps');
+  assert.deepEqual(both.hooks.Stop[0], prod.hooks.Stop[0]);
+  assert.match(both.hooks.Stop[1].hooks[0].command, /--owner=doomer-node-dev/);
+  assert.match(both.hooks.Stop[1].hooks[0].command, /--watch-root='\/test-apps'/);
+  assert.deepEqual(mergeHooks(both, 'codex', '/bin/doomer-dev', '/test-apps'), both);
+  delete process.env.DOOMER_DEV_INSTALL;
+  assert.deepEqual(mergeHooks(both, 'codex', '/bin/doomer', '/workspace'), both);
+});

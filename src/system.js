@@ -11,12 +11,14 @@ export const metadata = JSON.parse(await readFile(join(packageRoot, 'package.jso
 export const hash = value => createHash('sha256').update(value).digest('hex');
 export const quote = value => `'${String(value).replaceAll("'", "'\"'\"'")}'`;
 
+export const developmentInstall = (env = process.env) => env.DOOMER_DEV_INSTALL === '1';
+
 export function paths(env = process.env) {
-  const home = resolve(env.DOOMER_HOME || join(env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'doomer-node'));
+  const home = resolve((developmentInstall(env) ? env.DOOMER_DEV_HOME : env.DOOMER_HOME) || join(env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), developmentInstall(env) ? 'doomer-node-dev' : 'doomer-node'));
   return { home, state: join(home, 'state.json'), bin: join(home, 'bin'), runtime: join(home, 'runtime') };
 }
 
-export const nativePath = () => resolve(process.env.DOOMER_BIN_DIR || join(homedir(), '.local', 'bin'), 'doomer');
+export const nativePath = () => resolve(process.env.DOOMER_BIN_DIR || join(homedir(), '.local', 'bin'), developmentInstall() ? 'doomer-dev' : 'doomer');
 
 export async function readJSON(file, fallback) {
   try { return JSON.parse(await readFile(file, 'utf8')); }

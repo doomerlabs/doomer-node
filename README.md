@@ -199,3 +199,32 @@ workflow. Move it to `.github/workflows/ci.yml` with a credential that has GitHu
 workflow-write permission. The current repository push credential does not.
 
 License: Apache-2.0.
+
+## Development VM installation
+
+For a VM that already has a production installation, provision the following
+only in the local Node checkout's shell environment:
+
+```sh
+export DOOMER_DEV_INSTALL=1
+export DOOMER_NATIVE_BINARY="$HOME/workspace/doomer/bin/doomer"
+export DOOMER_HOOK_ROOT="$HOME/test-apps"
+export DOOMER_API_URL=http://localhost:3000/api
+export DOOMER_CONFIG_DIR="$HOME/.doomer-developer/doomer-testing"
+unset DOOMER_TOKEN
+```
+
+Then `npm pack && npx . install` installs the local binary as
+`~/.local/bin/doomer-dev`, keeps state in `~/.local/share/doomer-node-dev`, and
+adds development-owned hooks. Production's `doomer` executable, installer state,
+and hooks are preserved. Reinstalling either profile preserves the other's hook
+positions so Codex trust keys do not alternate. Uninstalling development keeps
+the shared skill used by production.
+
+The development hooks require the Go CLI's `--watch-root` support. Build the Go
+CLI yourself before installing. Provision production hooks with
+`DOOMER_HOOK_ROOT="$HOME/workspace"` and development mode unset, so the two hook
+sets watch disjoint directory trees. Both sets call Go directly. A chat rooted
+above both trees starts one scoped watcher for each tree. New or changed hook
+definitions still require native trust once; environment switching does not
+rewrite them.

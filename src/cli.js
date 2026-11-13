@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util';
-import { readState, changeState, metadata, paths } from './system.js';
+import { readState, changeState, metadata, paths, developmentInstall } from './system.js';
 import { setup, doctor, update, selectAgents } from './setup.js';
 import { installHooks } from './hooks.js';
 import { installNative } from './native.js';
@@ -39,7 +39,7 @@ export async function main(args) {
     'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
     json: { type: 'boolean' }, from: { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
   } });
-  if (options.home) process.env.DOOMER_HOME = options.home;
+  if (options.home) process.env[developmentInstall() ? 'DOOMER_DEV_HOME' : 'DOOMER_HOME'] = options.home;
   if (options.version) { console.log(metadata.version); return 0; }
   if (options.help || !positionals.length) { console.log(HELP); return 0; }
   const [command, ...extra] = positionals;

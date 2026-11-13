@@ -3,7 +3,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { homedir, tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { agents, hookFile, globalSkillPaths, removeHooks } from './hooks.js';
-import { paths, packageRoot, readState, readJSON, writeJSON, changeState, exists, locked, run, hash } from './system.js';
+import { paths, nativePath, developmentInstall, packageRoot, readState, readJSON, writeJSON, changeState, exists, locked, run, hash } from './system.js';
 import { endpoint } from './api.js';
 import { reloadCodexHooks } from './codex.js';
 
@@ -45,7 +45,7 @@ async function stopWatchers(home, state) {
 
 async function removeGlobalCommand(home, state) {
   const file = state.executable;
-  if (!file || basename(file) !== 'doomer') return {};
+  if (!file || basename(file) !== basename(nativePath())) return {};
   const binaries = state.binaries || {};
   const owned = path => dirname(path) === dirname(file) && /^doomer-[a-z0-9][a-z0-9._-]*$/i.test(basename(path)) && binaries[path];
   const result = {};
@@ -97,7 +97,7 @@ export async function uninstall() {
   // Remove per-agent links before the shared canonical copy.
   const sorted=await Promise.all(skills.map(async path=>({path,link:await exists(path)&&(await lstat(path)).isSymbolicLink()})));
   sorted.sort((a,b)=>Number(b.link)-Number(a.link));
-  for (const {path} of sorted) if(await removeSkill(path)) result.removedSkills.push(path);
+  for (const {path} of sorted) if(!developmentInstall() && await removeSkill(path)) result.removedSkills.push(path);
   Object.assign(result,await removeGlobalCommand(p.home,state));
   if(removeData) {await rm(p.home,{recursive:true,force:true});result.removedData=true;}
   return result;

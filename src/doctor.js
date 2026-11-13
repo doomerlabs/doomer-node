@@ -1,13 +1,13 @@
 import { access, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { delimiter, dirname, join } from 'node:path';
-import { metadata, nativePath, run } from './system.js';
+import { delimiter, dirname, join, basename } from 'node:path';
+import { metadata, nativePath, developmentInstall, run } from './system.js';
 
-async function executableOnPath(env) {
+async function executableOnPath(env, name) {
   const extensions = process.platform === 'win32' ? (env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';') : [''];
   for (const directory of (env.PATH || '').split(delimiter).filter(Boolean)) {
     for (const extension of extensions) {
-      const file = join(directory, `doomer${extension}`);
+      const file = join(directory, `${name}${extension}`);
       try {
         await access(file, process.platform === 'win32' ? constants.F_OK : constants.X_OK);
         if ((await stat(file)).isFile()) return file;
@@ -36,7 +36,7 @@ export async function inspectNativeInstallation(state, env = process.env) {
     const resolved = await realpath(command);
     commandStatus = target && resolved === target ? (nativeStatus === 'available' ? 'available' : 'unusable') : 'different';
   } catch { /* Includes broken symlinks. */ }
-  const resolvedCommand = await executableOnPath(env);
+  const resolvedCommand = await executableOnPath(env, basename(command));
   let onPath = false;
   if (resolvedCommand && target) {
     try { onPath = await realpath(resolvedCommand) === target; } catch { /* Broken PATH entry. */ }
@@ -47,7 +47,7 @@ export async function inspectNativeInstallation(state, env = process.env) {
 
 export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COLOR' in process.env) && process.env.TERM !== 'dumb' } = {}) {
   const paint = (text, code) => color ? `\u001b[${code}m${text}\u001b[0m` : text;
-  const rows = [paint('Doomer installation', '1'), ''];
+  const rows = [paint(developmentInstall() ? 'Doomer development installation' : 'Doomer installation', '1'), ''];
   const row = (label, value, status = 'ok') => {
     const [symbol, code] = status === 'ok' ? ['✓', '32'] : status === 'warning' ? ['!', '33'] : ['✗', '31'];
     rows.push(`  ${paint(symbol, code)} ${label.padEnd(12)} ${value}`);

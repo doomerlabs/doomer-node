@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile, lstat, symlink, rename, rm } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { nativePath, hash, run, readState, changeState, atomicWrite, exists } from './system.js';
+import { nativePath, developmentInstall, hash, run, readState, changeState, atomicWrite, exists } from './system.js';
 
 const RELEASES = 'https://downloads.doomer.ai/cli/';
 
@@ -51,8 +51,10 @@ async function activateNative(native) {
   const executable = nativePath();
   const temporary = join(dirname(executable), `.doomer-${randomBytes(8).toString('hex')}`);
   try {
-    await symlink(basename(native.path), temporary);
-    await rename(temporary, executable);
+    if (resolve(native.path) !== executable) {
+      await symlink(basename(native.path), temporary);
+      await rename(temporary, executable);
+    }
   } finally { await rm(temporary, { force: true }); }
   await changeState(state => {
     state.native = native;
@@ -80,6 +82,7 @@ async function installVersion(binary, version, source) {
 
 export async function installNative({ update = false } = {}) {
   const state = await readState();
+  if (developmentInstall() && !process.env.DOOMER_NATIVE_BINARY) throw new Error('Development installation requires DOOMER_NATIVE_BINARY pointing to your locally built Go CLI.');
   if (process.env.DOOMER_NATIVE_BINARY) {
     const source = resolve(process.env.DOOMER_NATIVE_BINARY);
     const version = (await run(source, ['--version'])).toString().trim();
