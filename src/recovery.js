@@ -33,7 +33,11 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
   const next = issues.length ? `${issues[0].message} ${issues[0].command ? `Run: ${issues[0].command}. ` : ''}${issues[0].instruction || ''}`.trim()
     : agents.length ? 'Open /hooks in your agent and review and trust the Doomer hooks. Start a new session if needed, then give the agent a small coding task. A completed review verifies activation.'
     : `Run ${shellQuote(result.globalCommand)} review for a manual review. This command authorizes uploading the repository source.`;
-  return { issues, uploadApproved, activation, reviewConfigured: result.ready && uploadApproved, next };
+  const enableAutomaticReviews = agents.length ? undefined : {
+    command: managerCommand('onboard', { api }),
+    instruction: 'Choose Codex, Claude Code, or both, review upload permission, then review and trust the hooks in your agent.',
+  };
+  return { issues, uploadApproved, activation, reviewConfigured: result.ready && uploadApproved, next, enableAutomaticReviews };
 }
 
 export class SetupError extends Error {

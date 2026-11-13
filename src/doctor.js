@@ -80,6 +80,7 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
     if (issue.instruction) rows.push(issue.instruction);
   }
   if (!result.issues?.length) rows.push(result.next);
+  if (result.enableAutomaticReviews) rows.push('', 'Enable automatic reviews:', result.enableAutomaticReviews.command, result.enableAutomaticReviews.instruction);
   return rows.join('\n');
 }
 
@@ -100,6 +101,9 @@ export function formatSetup(result) {
     if (result.codexReload?.restartRequired) lines.push('Codex: start a new session to load the hooks.');
     if (result.agents.includes('claude')) lines.push('Claude Code: start a new session if the hooks have not loaded.');
     if (result.uploadApproved) lines.push('Then ask your agent for a small coding change. Doomer will review it automatically; a completed review confirms activation.');
-  } else lines.push('', result.next);
+  } else {
+    lines.push('', result.next);
+    if (result.enableAutomaticReviews) lines.push('', 'Enable automatic reviews:', result.enableAutomaticReviews.command, result.enableAutomaticReviews.instruction);
+  }
   return lines.join('\n');
 }
