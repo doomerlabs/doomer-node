@@ -238,3 +238,9 @@ rewrite them.
 To replace a saved production hook scope, set `DOOMER_HOOK_ROOT` to the new
 directory and rerun onboarding. Set `DOOMER_HOOK_ROOT=` to clear it. Development
 hooks still require a scope; `--no-hooks` can install without one.
+
+`doomer upgrade` delegates a Node-managed CLI to this manager's `upgrade` command.
+Unlike `update`, `upgrade` changes only the native executable: it does not install
+skills, change agent selection, rewrite hooks, or grant upload permission. Use
+`upgrade --check --json` to inspect the latest release without writing local state.
+Development/local candidate binaries remain user-managed.

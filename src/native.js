@@ -103,13 +103,42 @@ export async function installNative({ update = false } = {}) {
     if (!(await lstat(installed.path)).isFile() || hash(await readFile(installed.path)) !== installed.sha256) throw new Error('Installed native CLI has changed. Reinstall with DOOMER_NATIVE_BINARY or update.');
     return activateNative({ ...installed, watch: await supportsWatch(installed.path) });
   }
+  const { manifest, asset } = await stableRelease();
+  const archive = await download(asset.url, 64 * 1024 * 1024);
+  if (hash(archive) !== asset.sha256) throw new Error('Native release checksum mismatch.');
+  return installVersion(archiveBinary(archive), manifest.version, 'stable');
+}
+
+async function stableRelease() {
   const platform = `${process.platform}_${{ x64: 'amd64', arm64: 'arm64' }[process.arch] || 'unsupported'}`;
   const manifest = JSON.parse((await download(`${RELEASES}stable.json`, 1024 * 1024)).toString());
   const asset = manifest.assets?.[platform];
   if (manifest.schema_version !== 1 || !/^20\d{2}\.\d{1,2}\.\d{1,2}\.\d+$/.test(manifest.version) || !asset || !/^[a-f0-9]{64}$/.test(asset.sha256)) throw new Error(`No valid native CLI release for ${platform}.`);
   const expectedURL = `${RELEASES}releases/${manifest.version}/doomer_${manifest.version}_${platform}.tar.gz`;
   if (asset.url !== expectedURL) throw new Error('Native release URL does not match its version.');
-  const archive = await download(asset.url, 64 * 1024 * 1024);
-  if (hash(archive) !== asset.sha256) throw new Error('Native release checksum mismatch.');
-  return installVersion(archiveBinary(archive), manifest.version, 'stable');
+  return { manifest, asset };
+}
+
+// CLI-only maintenance never installs skills or rewrites agent hook settings.
+export async function upgradeNative({ check = false } = {}) {
+  const state = await readState();
+  const current = state.native;
+  if (!current || current.source !== 'stable' || developmentInstall() || process.env.DOOMER_NATIVE_BINARY) {
+    throw new Error('CLI-only upgrade requires a released Node-managed installation; development binaries remain user-built.');
+  }
+  if (!state.binaries?.[current.path] || !(await exists(current.path)) || !(await lstat(current.path)).isFile() || hash(await readFile(current.path)) !== current.sha256) {
+    throw new Error('Installed native CLI has changed; repair the installation before upgrading.');
+  }
+  const { manifest, asset } = await stableRelease();
+  const parts = value => value.split('.').map(Number);
+  if (!/^20\d{2}\.\d{1,2}\.\d{1,2}\.\d+$/.test(current.version)) throw new Error('Invalid installed CLI version.');
+  const previous = parts(current.version), next = parts(manifest.version);
+  const first = next.findIndex((value, i) => value !== previous[i]);
+  const available = first >= 0 && next[first] > previous[first];
+  if (!check && available) {
+    const archive = await download(asset.url, 64 * 1024 * 1024);
+    if (hash(archive) !== asset.sha256) throw new Error('Native release checksum mismatch.');
+    await installVersion(archiveBinary(archive), manifest.version, 'stable');
+  }
+  return { state: available ? (check ? 'update_available' : 'updated') : 'current', currentVersion: current.version, latestVersion: manifest.version, manager: 'node' };
 }

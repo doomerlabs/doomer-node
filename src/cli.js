@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util';
 import { readState, changeState, metadata, paths, developmentInstall } from './system.js';
 import { setup, doctor, update, selectAgents } from './setup.js';
 import { installHooks } from './hooks.js';
-import { installNative } from './native.js';
+import { installNative, upgradeNative } from './native.js';
 import { resolveAPI } from './api.js';
 import { uninstall } from './uninstall.js';
 import { reloadCodexHooks, reloadMessage } from './codex.js';
@@ -17,6 +17,7 @@ Usage: npx @doomerlabs/doomer <command>
   install-hooks                Install or repair agent hooks
   refresh-hooks                Reload hooks in a running local Codex server
   doctor                       Check CLI, skill and hook readiness (no changes)
+  upgrade                      Update only the native CLI (--check to inspect)
   update                       Update CLI + skill and repair configured hooks
   uninstall                    Remove managed hooks, skill, CLI and local data
   revoke                       Revoke saved upload approval for this service
@@ -34,7 +35,7 @@ Node.js 22+ and Git required. Setup does not grant native hook trust.
 
 export async function main(args) {
   const { values: options, positionals } = parseArgs({ args, allowPositionals: true, strict: true, options: {
-    help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
+    check: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
     agent: { type: 'string' },
     'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
     json: { type: 'boolean' }, from: { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
@@ -81,6 +82,11 @@ export async function main(args) {
       const result=await reloadCodexHooks();
       console.log(options.json ? JSON.stringify(result,null,2) : reloadMessage(result));
       return result.reloaded ? 0 : 1;
+    }
+    case 'upgrade': {
+      const result = await upgradeNative({ check: options.check });
+      console.log(options.json ? JSON.stringify(result, null, 2) : `Doomer ${result.state}: ${result.currentVersion} → ${result.latestVersion}`);
+      return 0;
     }
     case 'update': {
       const result = await update(options);
