@@ -9,8 +9,9 @@ import { paths, developmentInstall, selectedHookRoot, metadata, packageRoot, has
 import { resolveAPI } from './api.js';
 import { uploadPrompt, acceptsUploadAnswer } from './permissions.js';
 import { installNative } from './native.js';
-import { reloadCodexHooks, reloadMessage } from './codex.js';
+import { reloadCodexHooks } from './codex.js';
 import { inspectNativeInstallation } from './doctor.js';
+import { installationGuidance, managerCommand, setupStep } from './recovery.js';
 
 export async function question(text) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error('Interactive setup requires a terminal. Pass --agent claude,codex or --no-hooks.');
@@ -195,19 +196,19 @@ export async function setup(options, { forceSkill = true } = {}) {
     if (process.env.DOOMER_HOOK_ROOT) process.env.DOOMER_HOOK_ROOT = await realpath(hookRoot);
   }
   await rm(join(paths().home,'uninstalling.json'),{force:true});
-  const installed = await installCLI({ from: options.from });
-  const native = await installNative();
+  const retry = managerCommand('onboard', { agents: selected, api: options['api-url'] });
+  const installed = await setupStep('Installing the manager', retry, () => installCLI({ from: options.from }));
+  const native = await setupStep('Installing the Go CLI', retry, () => installNative());
   if (forceSkill || !await skillPresent(selected)) {
     console.error('Adding the doomer skill through the official skills CLI…');
-    await installSkill(selected);
+    await setupStep('Installing the skill', retry, () => installSkill(selected));
   }
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
-  await configure(selected, native.executable, options);
+  await setupStep('Configuring agent hooks', retry, () => configure(selected, native.executable, options));
   const result = { ...installed, ...native, agents: selected, ...(await doctor()) };
   if(selected.includes('codex')) {
     result.codexReload=await reloadCodexHooks();
-    const message=reloadMessage(result.codexReload);
-    result.next=result.ready ? message : `${result.next} ${message}`;
+
   }
   return result;
 }
@@ -221,16 +222,11 @@ export async function doctor() {
   const hooks = await Promise.all(state.agents.map(agent => checkHooks(agent, state.executable)));
   const skill = await skillPresent(state.agents);
   const ready = cli && inspection.nativeStatus === 'available' && automaticReviews && inspection.commandInstalled && skill && hooks.every(h => h.configured && h.enabled);
-  const next = !cli || inspection.nativeStatus !== 'available' || !inspection.commandInstalled || !skill
-    ? 'Run npx @doomerlabs/doomer onboard to repair the installation.'
-    : !automaticReviews ? 'Install a Go CLI with the current watch command using DOOMER_NATIVE_BINARY, then rerun onboard.'
-    : hooks.some(h => !h.configured) ? 'Run npx @doomerlabs/doomer install-hooks to repair agent hooks.'
-    : hooks.some(h => !h.enabled) ? 'Enable hooks in your agent settings.'
-    : state.agents.length ? 'Review and trust the Doomer hooks in /hooks. Configuration on disk does not verify activation.'
-    : 'Run doomer review to start a standalone review.';
-  return { ready, cli, ...inspection, automaticReviews, version: state.cliVersion || null,
+  const result = { ready, cli, ...inspection, automaticReviews, version: state.cliVersion || null,
     executable: state.executable || null, skill: skill ? 'installed' : 'missing', hooks,
-    uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })), next };
+    uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })) };
+  const api = resolveAPI(undefined, state.api);
+  return { ...result, ...installationGuidance(result, { api, uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === api) }) };
 }
 
 export async function update(options) {
@@ -246,8 +242,7 @@ export async function update(options) {
   const updated = { ...result, ...native, version, ...(await doctor()) };
   if(selected.includes('codex')) {
     updated.codexReload=await reloadCodexHooks();
-    const message=reloadMessage(updated.codexReload);
-    updated.next=updated.ready ? message : `${updated.next} ${message}`;
+
   }
   return updated;
 }

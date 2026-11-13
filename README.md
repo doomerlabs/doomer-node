@@ -35,6 +35,8 @@ Setup selects Claude Code, Codex, both, or standalone reviews, then:
 5. Offers global source-upload approval separately: “Allow Doomer reviews to
    upload source snapshots to Doomer (https://doomer.ai)?”
 
+After setup, the summary identifies the selected agents and whether source uploads are approved. Open `/hooks` in each agent to review and trust Doomer. Start a new session if the hooks have not loaded, then give the agent a small coding task. Doomer reviews the changes automatically; a completed review verifies activation. Declining uploads keeps automatic reviews off without undoing installation.
+
 The installer also downloads the Go CLI from the official stable channel and
 verifies its archive checksum. It installs versioned executables beside a `~/.local/bin/doomer` symlink, for
 example `doomer-2026.11.12.1`. Updates atomically switch the symlink, so running
@@ -99,6 +101,14 @@ doomer review get REVIEW_ID --workspace
 Run reviews directly with the installed Go CLI, `doomer`. The Node manager
 only installs and configures Doomer; it does not run or delegate reviews.
 Use `doomer review --help` for review options, upload permission, and result handling.
+
+## Diagnose setup
+
+Run `npx @doomerlabs/doomer doctor` for a readable diagnosis. `--json` includes structured `issues`, `next`, `uploadApproved` and `activation`. `ready` means installed configuration; it does not prove hook trust, upload consent or a completed review.
+
+Missing CLI or skill: rerun `onboard`. Missing hooks: run `install-hooks --agent codex` (or `claude`). Disabled hooks or invalid settings: follow the reported settings-file action; repair preserves those user choices. PATH conflicts: use the reported absolute executable or fix PATH instead of reinstalling. Missing upload approval: rerun `onboard` and review the consent prompt. Setup errors name the failed step and provide a command to resume after fixing it.
+
+For an expired account login, use `doomer login --device` for the same service and profile. For unavailable or rate-limited service, retain any review ID and retry later. Never report a failed request as a completed review. `doomer support bundle` saves local diagnostics; `--upload` explicitly shares them.
 
 ## Hooks and maintenance
 

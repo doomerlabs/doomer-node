@@ -1,12 +1,12 @@
 import { parseArgs } from 'node:util';
-import { readState, changeState, metadata, paths, developmentInstall } from './system.js';
+import { readState, changeState, metadata, developmentInstall } from './system.js';
 import { setup, doctor, update, selectAgents } from './setup.js';
 import { installHooks } from './hooks.js';
 import { installNative, upgradeNative } from './native.js';
 import { resolveAPI } from './api.js';
 import { uninstall } from './uninstall.js';
 import { reloadCodexHooks, reloadMessage } from './codex.js';
-import { formatDoctor } from './doctor.js';
+import { formatDoctor, formatSetup } from './doctor.js';
 
 const HELP = `Doomer manager ${metadata.version}
 
@@ -51,13 +51,7 @@ export async function main(args) {
     case 'onboard': {
       const result = await setup(options, { forceSkill: command === 'install' });
       if (options.json) console.log(JSON.stringify(result, null, 2));
-      else {
-        console.log(`Doomer installed: ${result.executable}`);
-        console.log(`Agents: ${result.agents.join(', ') || 'standalone (no hooks)'}`);
-        for (const hook of result.hooks) console.log(`${hook.agent} hooks: ${hook.file}`);
-        console.log(result.next);
-        if (!result.onPath) console.log(`Add ${paths().home.includes('\\') ? 'the executable directory' : result.executable.slice(0, result.executable.lastIndexOf('/'))} to PATH to run doomer.`);
-      }
+      else console.log(formatSetup(result));
       return result.ready ? 0 : 1;
     }
     case 'doctor': {

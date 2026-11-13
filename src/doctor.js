@@ -74,6 +74,32 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
   if (!result.automaticReviews) row('Watch', 'Current watch command unavailable', 'error');
   rows.push('', paint(result.ready ? 'Installation ready' : 'Installation needs attention', result.ready ? '32;1' : '33;1'));
   if (!result.onPath && result.commandInstalled) rows.push(`Add ${dirname(result.globalCommand)} to the front of PATH to use this installation.`);
-  rows.push(result.next);
+  for (const issue of result.issues || []) {
+    rows.push(`\n${issue.message}`);
+    if (issue.command) rows.push(`Run: ${issue.command}`);
+    if (issue.instruction) rows.push(issue.instruction);
+  }
+  if (!result.issues?.length) rows.push(result.next);
   return rows.join('\n');
+}
+
+export function formatSetup(result) {
+  const names = result.agents.map(a => a === 'claude' ? 'Claude Code' : 'Codex').join(' and ');
+  const lines = [result.ready ? `Doomer is set up${names ? ` for ${names}` : ' for manual reviews'}.` : 'Doomer setup needs attention.',
+    `CLI: ${result.executable}`,
+    result.uploadApproved ? 'Source uploads: approved for this service.' : 'Source uploads: off.'];
+  if (result.issues.length) {
+    for (const issue of result.issues) {
+      lines.push('', issue.message);
+      if (issue.command) lines.push(`Run: ${issue.command}`);
+      if (issue.instruction) lines.push(issue.instruction);
+    }
+  }
+  if (result.agents.length) {
+    lines.push('', 'Next: open /hooks in your agent to review and trust Doomer.');
+    if (result.codexReload?.restartRequired) lines.push('Codex: start a new session to load the hooks.');
+    if (result.agents.includes('claude')) lines.push('Claude Code: start a new session if the hooks have not loaded.');
+    if (result.uploadApproved) lines.push('Then ask your agent for a small coding change. Doomer will review it automatically; a completed review confirms activation.');
+  } else lines.push('', result.next);
+  return lines.join('\n');
 }
