@@ -21,11 +21,14 @@ def sha256(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bundle', required=True, type=Path, help='Depot build-only Go bundle ZIP')
+    parser.add_argument('--bundle-sha256', required=True, help='expected SHA256 of the private Go ZIP')
     parser.add_argument('--package', required=True, type=Path, help='reviewed npm tarball')
     parser.add_argument('--package-sha256', required=True, help='expected SHA256 from the release rehearsal')
     args = parser.parse_args()
     if platform.system() != 'Darwin':
         parser.error('native macOS is required; an OS label or cross-build is not a native test')
+    if not re.fullmatch('[a-f0-9]{64}', args.bundle_sha256) or sha256(args.bundle) != args.bundle_sha256:
+        parser.error('Go bundle checksum mismatch')
     if not re.fullmatch('[a-f0-9]{64}', args.package_sha256) or sha256(args.package) != args.package_sha256:
         parser.error('npm candidate checksum mismatch')
     archive = args.package.resolve()

@@ -46,11 +46,12 @@ rehearsal artifacts. On an actual Mac with Node.js 22+, npm, Git and Python 3.9+
 ```sh
 python3 scripts/rehearse-release-macos.py \
   --bundle /absolute/path/to/go-rehearsal.zip \
+  --bundle-sha256 EXPECTED_BUNDLE_SHA256 \
   --package /absolute/path/to/doomerlabs-doomer-0.1.0.tgz \
   --package-sha256 EXPECTED_SHA256
 ```
 
-Use the expected tarball digest recorded in the private rehearsal report. This
+Use the expected ZIP and tarball digests recorded in the private rehearsal report. This
 checks archive hashes, runs the native binary, installs the package and skill,
 and tests standalone-to-hook configuration in a disposable home. It does not
 build a product CLI, grant uploads, activate hooks in a real agent, or touch an
