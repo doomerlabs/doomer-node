@@ -48,10 +48,10 @@ development mode (`DOOMER_DEV_INSTALL=1`), only `doomer-dev` is replaced;
 production `doomer` is preserved. These profiles cannot both own the same local
 build: keep production on a released binary before adding development mode.
 
-The integration requires a Go build with the foreground `watch` command and `watch agent-hook`, on the
-`feat/watch-all-changes` branch until released. An older stable release can run
-manual reviews, but doctor reports automatic reviews unavailable rather than
-silently claiming the watcher is ready.
+Automatic reviews require a Go CLI with the foreground `watch` command and
+`watch agent-hook`. An older release may support manual reviews while doctor
+reports automatic reviews unavailable. Use a compatible released CLI, or an
+explicitly selected candidate for authorized source testing.
 
 Explicit agent selection supports noninteractive installation:
 
@@ -206,9 +206,10 @@ the live service or alter your CLI. npm and skills.sh provide their own metrics;
 no additional Doomer installation telemetry is implemented yet. Live-service and
 native-agent acceptance testing remain release checks.
 
-`docs/github-actions-ci.yml` is a ready-to-enable Node 22/24 and macOS/Linux
-workflow. Move it to `.github/workflows/ci.yml` with a credential that has GitHub
-workflow-write permission. The current repository push credential does not.
+The active CI workflow is `.depot/workflows/agent-e2e.yml`, using the pinned
+shared runner in `doomerlabs/agent-e2e`. Test credentials stay in Doppler
+`doomer/test`. The older GitHub Actions example is not the active CI setup.
+See [release preparation](docs/release-preparation.md) for the staged rollout.
 
 License: Apache-2.0.
 
