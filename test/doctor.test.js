@@ -31,6 +31,13 @@ test('doctor accepts rebuilt binaries and reports the running version', async t 
   assert.equal(result.capabilities.watchAgentHook, false, 'a version string alone is insufficient');
   await writeFile(binary, `#!${process.execPath}\nconsole.log(process.argv.includes('--help') ? 'Watch recursively and review settled changes until stopped --agent --manager-home' : 'doomer dev');\n`);
   assert.equal((await inspectNativeInstallation(state, { PATH: root })).capabilities.watchAgentHook, true);
+  await rm(join(root, 'doomer'));
+  await writeFile(join(root, 'doomer'), `#!${process.execPath}\nconsole.log('doomer other');\n`, { mode: 0o755 });
+  const replaced = await inspectNativeInstallation(state, { PATH: root });
+  assert.equal(replaced.commandStatus, 'different');
+  assert.equal(replaced.capabilities.watchAgentHook, false, 'do not attest a binary the hooks do not call');
+  await rm(join(root, 'doomer'));
+  await symlink(binary, join(root, 'doomer'));
   await writeFile(binary, `#!${process.execPath}\nconsole.log(process.argv.includes('--help') ? 'Watch recursively and review settled changes until stopped' : 'doomer dev');\n`);
   assert.equal((await inspectNativeInstallation(state, { PATH: root })).capabilities.watchAgentHook, false, 'generic watch alone is insufficient');
 });

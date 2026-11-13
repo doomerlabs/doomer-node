@@ -42,7 +42,7 @@ export async function inspectNativeInstallation(state, env = process.env) {
   if (resolvedCommand && target) {
     try { onPath = await realpath(resolvedCommand) === target; } catch { /* Broken PATH entry. */ }
   }
-  const capabilities = { watchAgentHook: nativeStatus === 'available' && await supportsWatch(binary) };
+  const capabilities = { watchAgentHook: commandStatus === 'available' && await supportsWatch(command) };
   return { capabilities, native: target !== null, nativeStatus, nativeVersion, recordedNativeVersion: state.native?.version || null,
     commandInstalled: commandStatus === 'available', commandStatus, globalCommand: command, resolvedCommand, onPath };
 }

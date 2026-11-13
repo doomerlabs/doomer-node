@@ -98,7 +98,7 @@ export async function installHooks(agent, executable = nativePath()) {
   const root = selectedHookRoot(state);
   if (developmentInstall() && !root) throw new Error('Development hooks require DOOMER_HOOK_ROOT pointing to your test-apps directory.');
   if (root && !(await run(executable, ['watch', 'agent-hook', '--help'])).toString().includes('--watch-root')) throw new Error('This Go CLI needs watch-root support; rebuild before installing scoped hooks.');
-  await changeState(state => { if (root) state.hookRoot = root; state.hookFiles = [...new Set([...(state.hookFiles || []), file])]; });
+  await changeState(state => { if (root) state.hookRoot = root; else if (Object.hasOwn(process.env, 'DOOMER_HOOK_ROOT')) delete state.hookRoot; state.hookFiles = [...new Set([...(state.hookFiles || []), file])]; });
   return locked(file, async () => {
     let original;
     try { original = await readFile(file, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -116,7 +116,7 @@ export async function checkHooks(agent, executable = nativePath()) {
     const config = await readJSON(file, {});
     validate(config);
     const state = await readState();
-    const command = hookCommand(agent, executable, process.env.DOOMER_HOOK_ROOT || state.hookRoot);
+    const command = hookCommand(agent, executable, selectedHookRoot(state));
     const configured = eventsFor(agent).every(event => (config.hooks?.[event] || []).some(group => (!group.matcher || group.matcher === '.*') && group.hooks.some(h => h.type === 'command' && h.command === command && h.async !== true)));
     return { agent, file, configured, enabled: config.disableAllHooks !== true, activation: 'unverified' };
   } catch (error) { return { agent, file, configured: false, error: error.message }; }
