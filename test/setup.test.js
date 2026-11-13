@@ -78,6 +78,14 @@ else process.exit(1);
   assert.equal(JSON.parse(await readFile(join(codex, 'hooks.json'))).permissions, 'preserve');
   await cli(['update']);
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
+  // An explicitly empty override clears stale persisted scope without manual
+  // state editing or probing the old native binary before reinstalling it.
+  const stale = JSON.parse(await readFile(join(home, 'state', 'state.json')));
+  stale.hookRoot = join(home, 'deleted-scope');
+  await writeFile(join(home, 'state', 'state.json'), JSON.stringify(stale));
+  env.DOOMER_HOOK_ROOT = '';
+  await cli(['onboard', '--agent', 'codex']);
+  assert.equal(JSON.parse(await readFile(join(home, 'state', 'state.json'))).hookRoot, undefined);
   const updatedHooks = JSON.parse(await readFile(join(codex, 'hooks.json')));
   assert.equal(updatedHooks.hooks.Stop[0].hooks[0].command, hooks.hooks.Stop[1].hooks[0].command, 'updates retain the stable hook command');
 });

@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, lstat, stat, access, readFile, readdir, realpath } 
 import { constants } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { agents, hookFile, installHooks, checkHooks, globalSkillPaths } from './hooks.js';
-import { paths, developmentInstall, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
+import { paths, developmentInstall, selectedHookRoot, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
 import { resolveAPI } from './api.js';
 import { uploadPrompt, acceptsUploadAnswer } from './permissions.js';
 import { installNative } from './native.js';
@@ -141,8 +141,8 @@ export async function skillPresent(selected = []) {
 
 export async function configure(selected, runtime, options) {
   const installed = [];
-  if (process.env.DOOMER_HOOK_ROOT) {
-    await changeState(s => { s.hookRoot = process.env.DOOMER_HOOK_ROOT; });
+  if (Object.hasOwn(process.env, 'DOOMER_HOOK_ROOT')) {
+    await changeState(s => { if (process.env.DOOMER_HOOK_ROOT) s.hookRoot = process.env.DOOMER_HOOK_ROOT; else delete s.hookRoot; });
   }
   for (const agent of selected) installed.push(await installHooks(agent, runtime));
   await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; s.api = resolveAPI(options['api-url'], s.api); });
@@ -188,13 +188,11 @@ export async function setup(options, { forceSkill = true } = {}) {
   resolveAPI(options['api-url'], (await readState()).api);
   const selected = await selectAgents(options);
   if (developmentInstall() && !process.env.DOOMER_NATIVE_BINARY) throw new Error('Development installation requires DOOMER_NATIVE_BINARY.');
-  const hookRoot = process.env.DOOMER_HOOK_ROOT || (await readState()).hookRoot;
+  const hookRoot = selectedHookRoot(await readState());
   if (developmentInstall() && selected.length && !hookRoot) throw new Error('Development hooks require DOOMER_HOOK_ROOT pointing to your test-apps directory.');
-  if (hookRoot) {
-    if (!isAbsolute(hookRoot) || !(await stat(hookRoot)).isDirectory()) throw new Error('DOOMER_HOOK_ROOT must be an existing absolute directory.');
+  if (hookRoot && selected.length) {
+    if (!isAbsolute(hookRoot) || !(await stat(hookRoot).catch(() => null))?.isDirectory()) throw new Error('DOOMER_HOOK_ROOT must be an existing absolute directory. Set DOOMER_HOOK_ROOT to a new directory, or to an empty value to clear the saved scope.');
     if (process.env.DOOMER_HOOK_ROOT) process.env.DOOMER_HOOK_ROOT = await realpath(hookRoot);
-    const binary = process.env.DOOMER_NATIVE_BINARY || (await readState()).native?.path;
-    if (binary && !(await run(binary, ['watch', 'agent-hook', '--help'])).toString().includes('--watch-root')) throw new Error('This Go CLI needs watch-root support; rebuild before installing scoped hooks.');
   }
   await rm(join(paths().home,'uninstalling.json'),{force:true});
   const installed = await installCLI({ from: options.from });

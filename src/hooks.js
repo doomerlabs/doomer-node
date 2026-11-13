@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { join, dirname, isAbsolute } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { atomicWrite, quote, readJSON, locked, paths, nativePath, changeState, readState, developmentInstall, run } from './system.js';
+import { atomicWrite, quote, readJSON, locked, paths, nativePath, changeState, readState, developmentInstall, selectedHookRoot, run } from './system.js';
 
 export const agents = ['claude', 'codex'];
 export const events = ['UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd'];
@@ -95,7 +95,7 @@ export function mergeHooks(config, agent, executable = nativePath(), root) {
 export async function installHooks(agent, executable = nativePath()) {
   const file = hookFile(agent);
   const state = await readState();
-  const root = process.env.DOOMER_HOOK_ROOT || state.hookRoot;
+  const root = selectedHookRoot(state);
   if (developmentInstall() && !root) throw new Error('Development hooks require DOOMER_HOOK_ROOT pointing to your test-apps directory.');
   if (root && !(await run(executable, ['watch', 'agent-hook', '--help'])).toString().includes('--watch-root')) throw new Error('This Go CLI needs watch-root support; rebuild before installing scoped hooks.');
   await changeState(state => { if (root) state.hookRoot = root; state.hookFiles = [...new Set([...(state.hookFiles || []), file])]; });

@@ -3,7 +3,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { homedir, tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { agents, hookFile, globalSkillPaths, removeHooks } from './hooks.js';
-import { paths, nativePath, developmentInstall, packageRoot, readState, readJSON, writeJSON, changeState, exists, locked, run, hash } from './system.js';
+import { paths, nativePath, developmentInstall, packageRoot, readState, otherState, readJSON, writeJSON, changeState, exists, locked, run, hash } from './system.js';
 import { endpoint } from './api.js';
 import { reloadCodexHooks } from './codex.js';
 
@@ -52,7 +52,7 @@ async function removeGlobalCommand(home, state) {
   if (await exists(file)) {
     const info = await lstat(file);
     const target = info.isSymbolicLink() ? resolve(dirname(file), await readlink(file)) : '';
-    if (target && owned(target)) {
+    if ((target && owned(target)) || (info.isFile() && owned(file) && hash(await readFile(file)) === binaries[file])) {
       await rm(file);
       result.removedExecutable = file;
     } else result.preservedExecutable = file;
@@ -97,7 +97,10 @@ export async function uninstall() {
   // Remove per-agent links before the shared canonical copy.
   const sorted=await Promise.all(skills.map(async path=>({path,link:await exists(path)&&(await lstat(path)).isSymbolicLink()})));
   sorted.sort((a,b)=>Number(b.link)-Number(a.link));
-  for (const {path} of sorted) if(!developmentInstall() && await removeSkill(path)) result.removedSkills.push(path);
+  const other = await otherState();
+  const sharedSkillInUse = other.runtime && await exists(other.runtime);
+  for (const {path} of sorted) if(!sharedSkillInUse && await removeSkill(path)) result.removedSkills.push(path);
+  if (sharedSkillInUse) result.preservedSharedSkill = true;
   Object.assign(result,await removeGlobalCommand(p.home,state));
   if(removeData) {await rm(p.home,{recursive:true,force:true});result.removedData=true;}
   return result;

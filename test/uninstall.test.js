@@ -66,3 +66,30 @@ test('uninstall refuses to recursively delete an unrecognized data directory',as
   await assert.rejects(exec(process.execPath,[entry,'uninstall'],{env:{...process.env,DOOMER_HOME:home}}),/unrecognized installation directory/);
   assert.equal(await readFile(join(home,'keep'),'utf8'),'important');
 });
+
+
+test('either uninstall order preserves the other profile and removes the shared skill last', async t => {
+  for (const devFirst of [true, false]) {
+    const f = await fixture(t);
+    const devHome = join(f.home, 'dev-state');
+    const runtime = join(devHome, 'runtime', 'bin', 'doomer.js');
+    const devBinary = join(f.home, '.local', 'bin', 'doomer-dev');
+    await mkdir(join(devHome, 'runtime', 'bin'), { recursive: true });
+    await writeFile(runtime, '// manager');
+    await writeFile(devBinary, 'development binary');
+    await writeFile(join(devHome, 'state.json'), JSON.stringify({ version: 1, runtime, native: { path: devBinary }, executable: devBinary, binaries: { [devBinary]: hash(await readFile(devBinary)) }, agents: ['codex'], grants: [], hookFiles: [f.hook] }));
+    const config = JSON.parse(await readFile(f.hook));
+    config.hooks.Stop.push({ hooks: [{ command: 'dev hook --owner=doomer-node-dev' }] });
+    await writeFile(f.hook, JSON.stringify(config));
+    const run = dev => exec(process.execPath, [entry, 'uninstall', '--json'], { env: { ...f.env, DOOMER_DEV_HOME: devHome, DOOMER_DEV_INSTALL: dev ? '1' : '0' }, cwd: f.home });
+    await run(devFirst);
+    assert.equal((await readFile(join(f.skill, 'SKILL.md'), 'utf8')).includes('name: doomer'), true);
+    assert.equal((await lstat(devFirst ? f.global : devBinary)).isSymbolicLink(), devFirst);
+    const remaining = JSON.stringify(JSON.parse(await readFile(f.hook)).hooks);
+    assert.ok(remaining.includes(devFirst ? 'node hook --owner=doomer-node' : 'dev hook --owner=doomer-node-dev'));
+    await run(!devFirst);
+    await assert.rejects(lstat(f.skill), { code: 'ENOENT' });
+    await assert.rejects(lstat(devBinary), { code: 'ENOENT' });
+    await assert.rejects(lstat(f.global), { code: 'ENOENT' });
+  }
+});

@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile, lstat, symlink, rename, rm } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { nativePath, developmentInstall, hash, run, readState, changeState, atomicWrite, exists } from './system.js';
+import { nativePath, developmentInstall, otherState, hash, run, readState, changeState, atomicWrite, exists } from './system.js';
 
 const RELEASES = 'https://downloads.doomer.ai/cli/';
 
@@ -71,6 +71,8 @@ async function installVersion(binary, version, source) {
   if (!/^[a-z0-9][a-z0-9._-]*$/i.test(suffix)) throw new Error('Invalid native CLI version.');
   const path = join(dirname(nativePath()), `doomer-${suffix}`);
   if (source === 'local') {
+    const other = await otherState();
+    if (other.native?.path === path && other.binaries?.[path]) throw new Error('The other installation uses doomer-dev. Keep production on a released binary before installing a separate development build.');
     await atomicWrite(path, binary, 0o755);
   } else if (await exists(path)) {
     if (!(await lstat(path)).isFile() || hash(await readFile(path)) !== sha256) throw new Error(`Installed version differs: ${path}`);

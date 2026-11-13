@@ -35,6 +35,8 @@ export async function atomicWrite(file, data, mode = 0o600) {
 }
 export const writeJSON = (file, value) => atomicWrite(file, `${JSON.stringify(value, null, 2)}\n`);
 export const readState = () => readJSON(paths().state, { version: 1, agents: [], grants: [] });
+export const otherState = () => readJSON(paths({ ...process.env, DOOMER_DEV_INSTALL: developmentInstall() ? '0' : '1' }).state, { version: 1, agents: [], grants: [] });
+export const selectedHookRoot = state => Object.hasOwn(process.env, 'DOOMER_HOOK_ROOT') ? process.env.DOOMER_HOOK_ROOT || undefined : state.hookRoot;
 
 // Serialize changes to shared installation/session state; fail rather than steal a lock.
 export async function locked(file, work) {

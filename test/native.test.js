@@ -75,3 +75,19 @@ test('development install preserves production executable and uses separate stat
   assert.equal(await readlink(join(bin, 'doomer')), production);
   assert.equal(paths().home, join(root, 'dev-state'));
 });
+
+
+test('production-local and development profiles cannot overwrite each other', async t => {
+  for (const firstDev of [false, true]) {
+    const home = await mkdtemp(join(tmpdir(), 'doomer-owner-'));
+    t.after(() => rm(home, { recursive: true, force: true }));
+    const source = join(home, 'source');
+    await writeFile(source, `#!${process.execPath}\nconsole.log(process.argv.includes('--help') ? 'Watch recursively and review settled changes until stopped' : 'doomer dev');\n`, { mode: 0o755 });
+    const env = { ...process.env, DOOMER_HOME: join(home, 'prod'), DOOMER_DEV_HOME: join(home, 'dev'), DOOMER_BIN_DIR: join(home, 'bin'), DOOMER_NATIVE_BINARY: source };
+    const install = dev => exec(process.execPath, ['--input-type=module', '-e', 'import {installNative} from "./src/native.js"; console.log(JSON.stringify(await installNative()));'], { env: { ...env, DOOMER_DEV_INSTALL: dev ? '1' : '0' } });
+    const first = JSON.parse((await install(firstDev)).stdout);
+    const bytes = await readFile(first.path);
+    await assert.rejects(install(!firstDev), /other installation uses doomer-dev/);
+    assert.deepEqual(await readFile(first.path), bytes);
+  }
+});

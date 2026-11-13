@@ -40,8 +40,11 @@ verifies its archive checksum. It installs versioned executables beside a `~/.lo
 example `doomer-2026.11.12.1`. Updates atomically switch the symlink, so running
 watches finish on the old executable while new watches use the new one.
 For a development build, set `DOOMER_NATIVE_BINARY` to the Go executable you
-built. The installer saves local builds as `~/.local/bin/doomer-dev` and points
-`doomer` at that file. Reinstalling atomically replaces `doomer-dev`.
+built. In the default profile, the installer saves local builds as
+`~/.local/bin/doomer-dev` and points `doomer` at that file. In explicit
+development mode (`DOOMER_DEV_INSTALL=1`), only `doomer-dev` is replaced;
+production `doomer` is preserved. These profiles cannot both own the same local
+build: keep production on a released binary before adding development mode.
 
 The integration requires a Go build with the foreground `watch` command and `watch agent-hook`, on the
 `feat/watch-all-changes` branch until released. An older stable release can run
@@ -219,12 +222,19 @@ Then `npm pack && npx . install` installs the local binary as
 adds development-owned hooks. Production's `doomer` executable, installer state,
 and hooks are preserved. Reinstalling either profile preserves the other's hook
 positions so Codex trust keys do not alternate. Uninstalling development keeps
-the shared skill used by production.
+the shared skill used by production. Uninstalling production also preserves
+the shared skill while a development installation remains.
 
-The development hooks require the Go CLI's `--watch-root` support. Build the Go
-CLI yourself before installing. Provision production hooks with
+The development hooks require the Go CLI's `--watch-root` support. That Go patch
+is currently paused and uncommitted, so this scoped setup is not yet available
+from the published branch. The instructions below apply once that dependency
+is committed and you build it yourself. Provision production hooks with
 `DOOMER_HOOK_ROOT="$HOME/workspace"` and development mode unset, so the two hook
 sets watch disjoint directory trees. Both sets call Go directly. A chat rooted
 above both trees starts one scoped watcher for each tree. New or changed hook
 definitions still require native trust once; environment switching does not
 rewrite them.
+
+To replace a saved production hook scope, set `DOOMER_HOOK_ROOT` to the new
+directory and rerun onboarding. Set `DOOMER_HOOK_ROOT=` to clear it. Development
+hooks still require a scope; `--no-hooks` can install without one.
