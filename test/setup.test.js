@@ -54,7 +54,7 @@ else process.exit(1);
   assert.equal((await exec(process.execPath, [state.hookLauncher, '--version'], { env })).stdout.trim(), '0.1.0');
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
   const calls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.ok(calls.some(args => args.includes('skills') && args.includes('doomerlabs/skills#feat/doomer-node-skill') && args.includes('doomer') && args.includes('--global')));
+  assert.ok(calls.some(args => args.includes('skills') && args.some(arg => /^doomerlabs\/skills#[a-f0-9]{40}$/.test(arg)) && args.includes('doomer') && args.includes('--global')));
   assert.ok(calls.some(args => args[0] === 'pack'), 'install persists the running package without a published npm version');
   assert.ok(calls.some(args => args[0] === 'install' && args.at(-1).endsWith('.tgz')));
   env.DOOMER_TOKEN = 'account-token-for-test';
