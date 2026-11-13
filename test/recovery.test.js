@@ -56,3 +56,16 @@ test('setup failures retain their cause and offer a resumable action', async () 
     return true;
   });
 });
+
+
+test('incompatible local binaries stay user-managed instead of looping through update', () => {
+  const state = { ...installed(), automaticReviews: false, ready: false };
+  const local = installationGuidance(state, { uploadApproved: true, localNative: true }).issues[0];
+  assert.equal(local.code, 'cli_incompatible');
+  assert.equal(local.command, undefined);
+  assert.match(local.instruction, /Build a current CLI yourself/);
+  assert.match(local.instruction, /DOOMER_NATIVE_BINARY/);
+  assert.match(local.instruction, /onboard/);
+  const release = installationGuidance(state, { uploadApproved: true, localNative: false }).issues[0];
+  assert.match(release.command, /doomer update/);
+});

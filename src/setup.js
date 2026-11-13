@@ -226,7 +226,7 @@ export async function doctor() {
     executable: state.executable || null, skill: skill ? 'installed' : 'missing', hooks,
     uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })) };
   const api = resolveAPI(undefined, state.api);
-  return { ...result, ...installationGuidance(result, { api, uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === api) }) };
+  return { ...result, ...installationGuidance(result, { api, localNative: state.native?.source === 'local', uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === api) }) };
 }
 
 export async function update(options) {

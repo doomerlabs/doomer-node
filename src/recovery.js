@@ -11,14 +11,16 @@ export function managerCommand(command, { agents = [], api } = {}) {
 
 // Configuration, upload consent and native hook trust are separate decisions.
 // A disk inspection cannot attest that a running agent has activated its hooks.
-export function installationGuidance(result, { api, uploadApproved }) {
+export function installationGuidance(result, { api, uploadApproved, localNative = false }) {
   const agents = result.hooks.map(h => h.agent);
   const issues = [];
   const add = (code, message, command, instruction) => issues.push({ code, message, ...(command ? { command } : {}), ...(instruction ? { instruction } : {}) });
   if (!result.cli || result.nativeStatus !== 'available' || !result.commandInstalled || result.skill !== 'installed') {
     add('installation_incomplete', 'The CLI or skill is missing or cannot run.', managerCommand('onboard', { agents, api }));
   } else if (agents.length && !result.automaticReviews) {
-    add('cli_incompatible', 'This CLI does not support automatic review hooks.', managerCommand('update'));
+    if (developmentInstall() || localNative) {
+      add('cli_incompatible', 'This local CLI does not support automatic review hooks.', null, `Build a current CLI yourself, set DOOMER_NATIVE_BINARY to that executable, then run ${managerCommand('onboard', { agents, api })}. The manager does not build development binaries.`);
+    } else add('cli_incompatible', 'This CLI does not support automatic review hooks.', managerCommand('update'));
   }
   for (const hook of result.hooks) {
     if (hook.error) add('hook_config_invalid', `${hook.agent} settings could not be read: ${hook.error}`, null, `Fix the settings file at ${hook.file}, then run ${managerCommand('install-hooks', { agents: [hook.agent] })}.`);
