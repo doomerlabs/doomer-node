@@ -38,6 +38,25 @@ held with `/doomer no-approve` until the user explicitly authorizes release work
 5. Recheck PR CI and review conversations after the last code change. Do not use
    a passing run on older source as final-source evidence.
 
+## Native Mac handoff
+
+Download the reviewed build-only Go ZIP and npm tarball from the private
+rehearsal artifacts. On an actual Mac with Node.js 22+, npm, Git and Python 3.9+:
+
+```sh
+python3 scripts/rehearse-release-macos.py \
+  --bundle /absolute/path/to/go-rehearsal.zip \
+  --package /absolute/path/to/doomerlabs-doomer-0.1.0.tgz \
+  --package-sha256 EXPECTED_SHA256
+```
+
+Use the expected tarball digest recorded in the private rehearsal report. This
+checks archive hashes, runs the native binary, installs the package and skill,
+and tests standalone-to-hook configuration in a disposable home. It does not
+build a product CLI, grant uploads, activate hooks in a real agent, or touch an
+existing installation. It cleans up its fixture afterward. A separate native
+Codex/Claude session is still required to verify actual review delivery.
+
 ## After explicit approval
 
 - Integrate the shared test runner and new skill, then the Go and Node changes.
