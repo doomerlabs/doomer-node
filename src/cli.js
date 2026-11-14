@@ -43,11 +43,12 @@ export async function main(args) {
     'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
     json: { type: 'boolean' }, from: { type: 'string' }, 'cli-version': { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
   } });
-  if (options['reviewer-policy'] && (!['allow', 'decline'].includes(options['reviewer-policy']) || !['install', 'onboard'].includes(positionals[0]))) throw new Error('--reviewer-policy allow|decline is supported only by install and onboard, after reviewing the scoped proposal.');
   if (options.home) process.env[developmentInstall() ? 'DOOMER_DEV_HOME' : 'DOOMER_HOME'] = options.home;
   if (options.version) { console.log(metadata.version); return 0; }
   if (options.help || !positionals.length) { console.log(HELP); return 0; }
   const [command, ...extra] = positionals;
+  if (Object.hasOwn(options, 'reviewer-policy') && (!['allow', 'decline'].includes(options['reviewer-policy']) || !['install', 'onboard'].includes(command))) throw new Error('--reviewer-policy allow|decline is supported only by install and onboard, after reviewing the scoped proposal.');
+  if (Object.hasOwn(options, 'reviewer-policy-proposal') && (!['install', 'onboard'].includes(command) || !options['reviewer-policy'])) throw new Error('--reviewer-policy-proposal requires a reviewer-policy decision with install or onboard.');
   if (Object.hasOwn(options, 'check') && command !== 'upgrade') throw new Error('--check is supported only by upgrade.');
   if (Object.hasOwn(options, 'cli-version') && !['install', 'onboard'].includes(command)) throw new Error('--cli-version is supported only by install and onboard.');
   if (extra.length) throw new Error('Unexpected command arguments. Run npx @doomerlabs/doomer --help.');

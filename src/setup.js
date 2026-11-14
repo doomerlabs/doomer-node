@@ -189,6 +189,7 @@ export async function setup(options, { forceSkill = true } = {}) {
   validateCLIVersion(options['cli-version']);
   resolveAPI(options['api-url'], (await readState()).api);
   const selected = await selectAgents(options);
+  if (options['reviewer-policy'] && !selected.includes('codex')) throw new Error('--reviewer-policy requires selecting codex.');
   if (developmentInstall() && !process.env.DOOMER_NATIVE_BINARY) throw new Error('Development installation requires DOOMER_NATIVE_BINARY.');
   await rm(join(paths().home,'uninstalling.json'),{force:true});
   const retry = managerCommand('onboard', { agents: selected, api: options['api-url'], cliVersion: options['cli-version'] });
@@ -202,7 +203,7 @@ export async function setup(options, { forceSkill = true } = {}) {
   await setupStep('Configuring agent hooks', retry, () => configure(selected, native.executable, options));
   const codexReviewPolicy = selected.includes('codex')
     ? await setupStep('Configuring Codex reviewer policy', retry, () => configureReviewerPolicy(native.executable, options, question)) : undefined;
-  const result = { ...installed, ...native, agents: selected, ...(await doctor({ policy: codexReviewPolicy })), codexReviewPolicy };
+  const result = { ...installed, ...native, agents: selected, ...(await doctor({ policy: codexReviewPolicy })) };
   if(selected.includes('codex')) {
     result.codexReload=await reloadCodexHooks();
 

@@ -34,7 +34,20 @@ test('global install replaces the old CLI, installs skills via official CLI, rep
   const localEntry = join(source, 'bin', 'doomer.js');
   const npm = join(home, 'fake-npm.mjs');
   const native = join(home, 'fake-go');
-  await writeFile(native, '#!/usr/bin/env node\nconsole.log(process.argv.includes("codex-policy") ? JSON.stringify({policies:[],activation:"unverified"}) : process.argv.includes("--help") ? "Watch recursively and review settled changes until stopped --manager-home --agent" : "doomer 2026.11.10.3");\n', {mode:0o755});
+  await writeFile(native, `#!/usr/bin/env node
+import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const args = process.argv.slice(2);
+if (args.includes('codex-policy')) {
+  const installed = join(process.env.HOME, 'policy-installed');
+  appendFileSync(join(process.env.HOME, 'policy-calls'), JSON.stringify(args)+'\\n');
+  if (args.includes('--decision')) {
+    if (args[args.indexOf('--proposal')+1] !== 'fixture-scope-digest') process.exit(2);
+    writeFileSync(installed, 'configured');
+  }
+  console.log(JSON.stringify({policies:[{state:existsSync(installed)?'configured':'missing',extra_policy:'fixture scoped authorization',changes:['preserve unrelated settings'],activation:'unverified',install_command:[process.argv[1],'watch','codex-policy','--proposal','fixture-scope-digest','--decision','allow']}],activation:'unverified'}));
+} else console.log(args.includes('--help') ? 'Watch recursively and review settled changes until stopped --manager-home --agent' : 'doomer 2026.11.10.3');
+`, {mode:0o755});
   await writeFile(npm, `
 import { cp, mkdir, writeFile, appendFile, stat } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -91,7 +104,18 @@ else process.exit(1);
   assert.ok(calls.some(args => args[0] === 'install' && args.at(-1).endsWith('.tgz')));
   env.DOOMER_TOKEN = 'account-token-for-test';
   env.DOOMER_CONFIG_DIR = join(home, 'production-config');
-  await cli(['onboard', '--agent', 'codex', '--approve-uploads']);
+  const proposed = JSON.parse((await cli(['onboard', '--agent', 'codex', '--approve-uploads', '--json'])).stdout);
+  assert.equal(proposed.codexReviewPolicy.policies[0].state, 'missing');
+  await assert.rejects(access(join(home, 'policy-installed')));
+  const accepted = JSON.parse((await cli(['onboard', '--agent', 'codex', '--reviewer-policy', 'allow', '--reviewer-policy-proposal', 'fixture-scope-digest', '--json'])).stdout);
+  assert.equal(accepted.codexReviewPolicy.policies[0].state, 'configured');
+  const policyCalls = (await readFile(join(home, 'policy-calls'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.ok(policyCalls.some(args => args.includes('--decision') && args[args.indexOf('--proposal')+1] === 'fixture-scope-digest'));
+  await mkdir(join(home, '.claude', 'skills', 'doomer'), { recursive: true });
+  await writeFile(join(home, '.claude', 'skills', 'doomer', 'SKILL.md'), '---\nname: doomer\n---\n');
+  const otherAgent = JSON.parse((await cli(['onboard', '--agent', 'claude', '--json'])).stdout);
+  assert.match(otherAgent.codexReviewPolicy.error, /not been verified/);
+
   assert.equal((await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').length, calls.length, 'skill-first/onboard reuses installed CLI and skill');
   const approved = JSON.parse(await readFile(join(home, 'state', 'state.json')));
   assert.equal(approved.grants[0].scope, 'global');
