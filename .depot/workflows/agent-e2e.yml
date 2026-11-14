@@ -1,5 +1,7 @@
 name: agent-e2e
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, edited, ready_for_review]
@@ -24,7 +26,7 @@ jobs:
       E2E_REPORT_DIR: /tmp/component-agent-e2e
       COMPONENT_SOURCE: ${{ github.workspace }}/component
       CANDIDATE_SOURCE: ${{ github.workspace }}/candidate-cli
-      COMPONENT_BASE: ${{ github.event.pull_request.base.sha }}
+      COMPONENT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
