@@ -79,8 +79,7 @@ else process.exit(1);
   assert.equal(JSON.parse(await readFile(join(codex, 'hooks.json'))).permissions, 'preserve');
   await cli(['update']);
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
-  // An explicitly empty override clears stale persisted scope without manual
-  // state editing or probing the old native binary before reinstalling it.
+  // Reinstall removes obsolete global scope; hooks use each session cwd.
   const stale = JSON.parse(await readFile(join(home, 'state', 'state.json')));
   stale.hookRoot = join(home, 'deleted-scope');
   await writeFile(join(home, 'state', 'state.json'), JSON.stringify(stale));

@@ -47,7 +47,7 @@ export async function supportsWatch(binary) {
     const options = { timeout: 5000, maxBytes: 16384 };
     const [watch, hook] = await Promise.all([
       run(binary, ['watch', '--help'], options),
-      run(binary, ['watch', 'agent-hook', '--help'], options),
+      run(binary, ['watch', 'agent', '--help'], options),
     ]);
     return watch.toString().includes('Watch recursively and review settled changes until stopped')
       && hook.toString().includes('--manager-home') && hook.toString().includes('--agent');
