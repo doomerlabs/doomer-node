@@ -11,7 +11,7 @@ import { uploadPrompt, acceptsUploadAnswer } from './permissions.js';
 import { installNative, validateCLIVersion } from './native.js';
 import { reloadCodexHooks } from './codex.js';
 import { inspectNativeInstallation } from './doctor.js';
-import { SKILL_SOURCE } from './skill-source.js';
+import { withSkillSource } from './skill-source.js';
 import { installationGuidance, managerCommand, setupStep } from './recovery.js';
 
 export async function question(text) {
@@ -117,10 +117,12 @@ export async function installCLI({ from, version } = {}) {
 export async function installSkill(selected) {
   // npm exec launches the same official skills CLI as npx skills add; its own
   // telemetry supplies skills.sh counts. Respect the user's telemetry settings.
-  const args = ['exec', '--yes', '--package=skills', '--', 'skills', 'add', SKILL_SOURCE, '--skill', 'doomer', '--global', '--yes'];
-  if (selected.length) args.push('--agent', ...selected.map(a => a === 'claude' ? 'claude-code' : a));
-  else args.push('--agent', 'codex'); // Store the global skill without installing any hooks.
-  await npm(args, { stdio: ['inherit', 2, 2] });
+  await withSkillSource(async source => {
+    const args = ['exec', '--yes', '--package=skills', '--', 'skills', 'add', source, '--skill', 'doomer', '--global', '--yes'];
+    if (selected.length) args.push('--agent', ...selected.map(a => a === 'claude' ? 'claude-code' : a));
+    else args.push('--agent', 'codex'); // Store the global skill without installing any hooks.
+    await npm(args, { stdio: ['inherit', 2, 2] });
+  });
   await changeState(s => { s.skillInstalledAt = new Date().toISOString(); s.skillPaths=[...new Set([...(s.skillPaths||[]),...globalSkillPaths()])]; });
 }
 

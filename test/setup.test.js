@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { exec } from './helpers.js';
 import { entry, packageRoot, metadata } from '../src/system.js';
+import { SKILL_SOURCE } from '../src/skill-source.js';
 
 test('global install replaces the old CLI, installs skills via official CLI, repairs hooks and supports skill-first onboarding', async t => {
   const home = await mkdtemp(join(tmpdir(), 'doomer-install-'));
@@ -37,7 +38,9 @@ else process.exit(1);
   await writeFile(join(bin, 'doomer'), 'old doomer');
   const codex = join(home, '.codex'); await mkdir(codex);
   await writeFile(join(codex, 'hooks.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo keep' }] }] }, trust: 'keep' }));
-  const env = { ...process.env, HOME: home, DOOMER_HOME: join(home, 'state'), DOOMER_BIN_DIR: bin, CODEX_HOME: codex, CLAUDE_CONFIG_DIR: join(home, '.claude'), npm_execpath: npm, SOURCE: packageRoot, DOOMER_NATIVE_BINARY:native };
+  const fakeGit = join(bin, 'git');
+  await writeFile(fakeGit, `#!${process.execPath}\nif(process.argv.includes('rev-parse'))console.log('${SKILL_SOURCE.split('#')[1]}');\n`, {mode:0o755});
+  const env = { ...process.env, PATH: bin + ':' + process.env.PATH, HOME: home, DOOMER_HOME: join(home, 'state'), DOOMER_BIN_DIR: bin, CODEX_HOME: codex, CLAUDE_CONFIG_DIR: join(home, '.claude'), npm_execpath: npm, SOURCE: packageRoot, DOOMER_NATIVE_BINARY:native };
   const cli = args => exec(process.execPath, [entry, ...args], { env });
   assert.equal(JSON.parse((await cli(['install', '--agent', 'codex', '--json'])).stdout).ready, true);
   const state = JSON.parse(await readFile(join(home, 'state', 'state.json')));
@@ -54,7 +57,7 @@ else process.exit(1);
   assert.equal((await exec(process.execPath, [state.hookLauncher, '--version'], { env })).stdout.trim(), metadata.version);
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
   const calls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.ok(calls.some(args => args.includes('skills') && args.some(arg => /^doomerlabs\/skills#[a-f0-9]{40}$/.test(arg)) && args.includes('doomer') && args.includes('--global')));
+  assert.ok(calls.some(args => args.includes('skills') && args.some(arg => arg.includes('doomer-skill-') && arg.endsWith('/checkout')) && args.includes('doomer') && args.includes('--global')));
   assert.ok(calls.some(args => args[0] === 'pack'), 'install persists the running package without a published npm version');
   assert.ok(calls.some(args => args[0] === 'install' && args.at(-1).endsWith('.tgz')));
   env.DOOMER_TOKEN = 'account-token-for-test';
