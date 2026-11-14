@@ -11,6 +11,7 @@ import { uploadPrompt, acceptsUploadAnswer } from './permissions.js';
 import { installNative, validateCLIVersion } from './native.js';
 import { reloadCodexHooks } from './codex.js';
 import { inspectNativeInstallation } from './doctor.js';
+import { doctorService } from './doctor-service.js';
 import { withSkillSource } from './skill-source.js';
 import { installationGuidance, managerCommand, setupStep } from './recovery.js';
 
@@ -199,7 +200,7 @@ export async function setup(options, { forceSkill = true } = {}) {
   }
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
   await setupStep('Configuring agent hooks', retry, () => configure(selected, native.executable, options));
-  const result = { ...installed, ...native, agents: selected, ...(await doctor()) };
+  const result = { ...installed, ...native, agents: selected, ...(await doctor(options)) };
   if(selected.includes('codex')) {
     result.codexReload=await reloadCodexHooks();
 
@@ -207,7 +208,7 @@ export async function setup(options, { forceSkill = true } = {}) {
   return result;
 }
 
-export async function doctor() {
+export async function doctor(options = {}) {
   const state = await readState();
   const runtime = state.runtime;
   const cli = !!runtime && await exists(runtime);
@@ -219,8 +220,8 @@ export async function doctor() {
   const result = { ready, cli, ...inspection, automaticReviews, version: state.cliVersion || null,
     executable: state.executable || null, skill: skill ? 'installed' : 'missing', hooks,
     uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })) };
-  const api = resolveAPI(undefined, state.api);
-  return { ...result, ...installationGuidance(result, { api, localNative: state.native?.source === 'local', uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === api) }) };
+  const service = await doctorService({ explicit: options['api-url'], saved: state.api });
+  return { ...result, ...service, ...installationGuidance(result, { api: service.api, localNative: state.native?.source === 'local', uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === service.api) }) };
 }
 
 export async function update(options) {
@@ -235,7 +236,7 @@ export async function update(options) {
   await installSkill(selected);
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command.');
   for (const agent of selected) await installHooks(agent, native.executable);
-  const updated = { ...result, ...native, version, ...(await doctor()) };
+  const updated = { ...result, ...native, version, ...(await doctor(options)) };
   if(selected.includes('codex')) {
     updated.codexReload=await reloadCodexHooks();
 

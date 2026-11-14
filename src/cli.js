@@ -56,7 +56,7 @@ export async function main(args) {
       return result.ready ? 0 : 1;
     }
     case 'doctor': {
-      const result = await doctor();
+      const result = await doctor(options);
       if (options.json) console.log(JSON.stringify(result, null, 2));
       else console.log(formatDoctor(result));
       return result.ready ? 0 : 1;
