@@ -2,8 +2,9 @@
 
 The installer uses stable SemVer independently of the Go CLI version. Publish
 `0.0.2`, `0.0.3`, and so on; do not reuse an npm version or add a Node beta channel.
-The initial `0.0.1` package was published manually. This workflow starts with the
-next intentional release and does not publish anything merely by merging it.
+The initial `0.0.1` package was published manually. The first automated run verifies and tags that existing release; it never
+deletes or republishes its immutable npm bytes. Merging the workflow alone
+does not publish anything.
 
 ## CI responsibilities
 
@@ -14,7 +15,7 @@ next intentional release and does not publish anything merely by merging it.
 - Depot also runs the existing shared onboarding E2E workflow on main pushes
   and pull requests. Jev selection, dependency projections, signed R2 reuse,
   frozen component pins, and the existing credential isolation are preserved.
-- GitHub Actions runs `.github/workflows/publish.yml` only for `v*` tag pushes,
+- GitHub Actions runs `.github/workflows/publish.yml` only for numeric tag pushes,
   on a GitHub-hosted runner. It requires an exact stable SemVer/package match,
   a commit reachable from main, and successful `ci / package` and
   `agent-e2e / onboarding` checks from the Depot GitHub App for that commit.
@@ -68,10 +69,26 @@ trusted publishing. That settings change is separate from this PR.
    review and merge the change. Wait for main's Depot checks to pass.
 2. Confirm the default stable Go download supports this installer before making
    a normal customer release. A Go beta does not update the stable channel.
-3. Create an annotated `vVERSION` tag at that exact main commit and push the tag.
-   For example, an authorized `0.0.2` release uses `v0.0.2`.
+3. Create an annotated `VERSION` tag at that exact main commit and push the tag.
+   For example, an authorized `0.0.2` release uses `0.0.2`.
 4. Follow the GitHub publishing job through registry verification. It publishes
    to `latest`. Merging this workflow does not authorize a release/tag push.
+
+### Formalizing the initial 0.0.1
+
+`releases/0.0.1.json` records the original manual publication's source commit,
+archive integrity and every packaged file's digest and mode. Its hashes were
+checked against that source commit and the public registry archive.
+
+For the `0.0.1` tag, the workflow verifies the existing archive against this
+receipt and verifies that the current tested package has the same runtime,
+metadata, license and executable modes. Only README text may differ, because
+CI documentation was added after the manual publication. It skips npm upload
+and verifies the original registry bytes again. No new package contents or CI
+provenance are retroactively claimed for that manual release.
+
+A future runtime change still needs a new version; this receipt cannot permit
+replacing `0.0.1`. Later releases use the normal exact-archive publication path.
 
 Rerunning a job after a partial publication checks the existing npm integrity
 and skips publication if it matches. Different bytes at the same version fail;

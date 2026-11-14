@@ -208,7 +208,7 @@ native-agent acceptance testing remain release checks.
 
 Depot runs package checks and the pinned shared `doomerlabs/agent-e2e` runner
 on main pushes and pull requests. Test credentials stay in Doppler
-`doomer/test`. GitHub Actions handles only `v*` release tags, publishing through
+`doomer/test`. GitHub Actions handles only numeric release tags, publishing through
 npm trusted publishing after verifying Depot checks and the tested tarball.
 See [npm publishing](docs/npm-publishing.md) for setup and release instructions,
 and [release preparation](docs/release-preparation.md) for the customer rollout.

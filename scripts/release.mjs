@@ -3,6 +3,7 @@ import { resolve, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 
 const repository = 'doomerlabs/doomer-node';
 const marker = 'doomer-npm-package-v1';
@@ -14,7 +15,7 @@ const sleep = ms => new Promise(done => setTimeout(done, ms));
 export function validateMetadata(pkg, lock, tag) {
   if (pkg.name !== '@doomerlabs/doomer' || !versionPattern.test(pkg.version)) throw new Error('Expected @doomerlabs/doomer with a stable three-part SemVer version.');
   if (lock.name !== pkg.name || lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version || lock.packages?.['']?.name !== pkg.name) throw new Error('package.json and package-lock.json must agree.');
-  if (tag !== undefined && tag !== `v${pkg.version}`) throw new Error('Release tag must be v followed by the exact package version.');
+  if (tag !== undefined && tag !== pkg.version) throw new Error('Release tag must be the exact package version.');
   return { name: pkg.name, version: pkg.version };
 }
 
@@ -42,6 +43,48 @@ export function checkPublished(expected, published, latest) {
     if (i >= 0 && a[i] > b[i]) throw new Error('Refusing to move latest backwards.');
   }
   return true;
+}
+
+// The first release was published manually. Its immutable receipt is not a
+// permission to replace it: the original archive and every runtime file must
+// still match. Only README documentation may differ in the new CI commit.
+export function packageFiles(archive) {
+  const tar = gunzipSync(archive, { maxOutputLength: 1024 * 1024 });
+  const files = {};
+  for (let offset = 0; offset + 512 <= tar.length;) {
+    const header = tar.subarray(offset, offset + 512);
+    if (header.every(byte => byte === 0)) break;
+    const name = header.subarray(0, 100).toString().split('\0')[0];
+    const sizeText = header.subarray(124, 136).toString().replace(/\0/g, '').trim();
+    const modeText = header.subarray(100, 108).toString().replace(/\0/g, '').trim();
+    if (!name.startsWith('package/') || !/^[0-7]+$/.test(sizeText) || !/^[0-7]+$/.test(modeText) || ![0, 48].includes(header[156])) throw new Error('Unexpected initial-release archive entry.');
+    const path = name.slice(8), size = parseInt(sizeText, 8);
+    if (!path || path.split('/').some(part => !part || part === '.' || part === '..') || Object.hasOwn(files, path) || offset + 512 + size > tar.length) throw new Error('Invalid initial-release archive path or size.');
+    files[path] = { sha256: createHash('sha256').update(tar.subarray(offset + 512, offset + 512 + size)).digest('hex'), mode: parseInt(modeText, 8) };
+    offset += 512 + Math.ceil(size / 512) * 512;
+  }
+  return files;
+}
+
+export function verifyInitialRelease(current, published, receipt) {
+  if (receipt.schema !== 1 || receipt.name !== '@doomerlabs/doomer' || receipt.version !== '0.0.1' || receipt.publication !== 'manual' || !/^[a-f0-9]{40}$/.test(receipt.sourceCommit) || integrity(published) !== receipt.integrity) throw new Error('Initial release does not match its immutable publication receipt.');
+  const originalFiles = packageFiles(published), currentFiles = packageFiles(current);
+  const names = Object.keys(receipt.files).sort();
+  for (const files of [originalFiles, currentFiles]) {
+    if (JSON.stringify(Object.keys(files).sort()) !== JSON.stringify(names)) throw new Error('Initial-release file set changed.');
+    for (const name of names) {
+      const recorded = receipt.files[name], actual = files[name];
+      if (actual.mode !== recorded.mode || (files === originalFiles || name !== 'README.md') && actual.sha256 !== recorded.sha256) throw new Error(`Initial-release file changed: ${name}`);
+    }
+  }
+}
+
+async function downloadPublished(published) {
+  const url = new URL(published.dist.tarball);
+  if (url.origin !== 'https://registry.npmjs.org') throw new Error('Unexpected npm tarball host.');
+  const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(30000) });
+  if (!response.ok) throw new Error(`npm tarball returned HTTP ${response.status}.`);
+  return Buffer.from(await response.arrayBuffer());
 }
 
 async function metadata(tag) {
@@ -112,22 +155,28 @@ async function main() {
     const { evidence, tarball } = await pack(directory, expected);
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `\n<!-- ${marker}\n${JSON.stringify(evidence)}\n-->\nTested npm package: ${evidence.name}@${evidence.version}\n\nIntegrity: \`${evidence.integrity}\`\n`);
     if (expected) {
-      const publish = checkPublished(evidence, await registry(evidence.version), await registry('latest'));
+      const published = await registry(evidence.version);
+      let publication = evidence;
+      if (published && published.dist?.integrity !== evidence.integrity && evidence.version === '0.0.1') {
+        const receipt = JSON.parse(await readFile('releases/0.0.1.json'));
+        verifyInitialRelease(await readFile(tarball), await downloadPublished(published), receipt);
+        publication = { ...evidence, integrity: receipt.integrity, originalSourceCommit: receipt.sourceCommit, publication: 'manual, verified by CI' };
+        console.log('Verified the immutable manually published 0.0.1; no npm upload will be performed.');
+      }
+      const publish = checkPublished(publication, published, await registry('latest'));
+      await writeFile(join(directory, 'publication.json'), JSON.stringify(publication, null, 2) + '\n');
       if (!process.env.GITHUB_OUTPUT) throw new Error('Missing GitHub step outputs.');
       await appendFile(process.env.GITHUB_OUTPUT, `tarball=${tarball}\npublish=${publish}\n`);
     }
     console.log(`Verified ${evidence.name}@${evidence.version}: ${evidence.integrity}`); return;
   }
   if (command === 'verify') {
-    const expected = JSON.parse(await readFile(join(directory, 'expected.json')));
+    const expected = JSON.parse(await readFile(join(directory, 'publication.json')));
     for (let attempt = 0; attempt < 40; attempt++) {
       const published = await registry(expected.version);
       if (published) {
         if (published.dist?.integrity !== expected.integrity) throw new Error('Published integrity differs from the tested tarball.');
-        const url = new URL(published.dist.tarball);
-        if (url.origin !== 'https://registry.npmjs.org') throw new Error('Unexpected npm tarball host.');
-        const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(30000) });
-        if (!response.ok || integrity(Buffer.from(await response.arrayBuffer())) !== expected.integrity) throw new Error('Published npm tarball bytes do not match.');
+        if (integrity(await downloadPublished(published)) !== expected.integrity) throw new Error('Published npm tarball bytes do not match.');
         console.log(`Verified public npm tarball for ${expected.name}@${expected.version}.`); return;
       }
       await sleep(15000);

@@ -1,7 +1,7 @@
 name: Publish npm package
 on:
   push:
-    tags: ['v*']
+    tags: ['[0-9]*']
 permissions:
   contents: read
   checks: read
