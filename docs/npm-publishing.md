@@ -24,6 +24,11 @@ next intentional release and does not publish anything merely by merging it.
   installation hooks run during packing or publication. The public registry
   tarball is downloaded and verified afterward.
 
+Both CI jobs use the official Node.js 22.22.3 Linux distribution and npm 11.15.0.
+A custom Node build can produce different gzip bytes even when the unpacked tar
+contents match; use the same official distribution when reproducing locally.
+The integrity gate deliberately rejects a different archive.
+
 All push/PR testing stays in Depot. The GitHub publishing job does not run tests
 again or need a Depot token, Doppler bootstrap token, or npm access token.
 
