@@ -25,6 +25,8 @@ jobs:
       - run: npm run check
       - name: Pack tested npm artifact and record integrity
         run: node scripts/release.mjs pack "$RUNNER_TEMP/npm-release"
+      - name: Verify packed artifact installation with real downloads
+        run: node scripts/verify-skill-install.mjs "$RUNNER_TEMP/npm-release"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: npm-package
