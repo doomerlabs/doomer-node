@@ -29,6 +29,10 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
     else if (!hook.configured) add('hooks_missing', `${hook.agent} hooks need repair.`, managerCommand('install-hooks', { agents: [hook.agent] }));
     else if (!hook.enabled) add('hooks_disabled', `${hook.agent} hooks are disabled in agent settings.`, null, `Enable hooks in ${hook.agent}, then review and trust Doomer in /hooks.`);
   }
+  if (result.codexReviewPolicy?.error) add('reviewer_policy_unavailable', result.codexReviewPolicy.error, managerCommand('onboard', { agents, api }));
+  else if (result.codexReviewPolicy?.policies.some(p => !['configured', 'declined'].includes(p.state))) {
+    add('reviewer_policy_missing', 'Codex reviewer authorization needs a separate decision.', managerCommand('onboard', { agents, api }), 'Display and review the returned policy before accepting it. Upload consent and hook trust remain separate.');
+  }
   if (!uploadApproved) add('uploads_not_approved', 'Source uploads are not approved for this service. Automatic reviews will not run.', managerCommand('onboard', { agents, api }), 'Review the upload prompt and approve only if you want reviews. Declining keeps uploads off.');
   if (!result.onPath && result.commandInstalled) add('command_not_on_path', 'Your shell does not select this Doomer installation.', null, `Add ${result.globalCommand.slice(0, Math.max(result.globalCommand.lastIndexOf('/'), result.globalCommand.lastIndexOf('\\')))} to the front of PATH, or use ${shellQuote(result.globalCommand)} directly.`);
   const activation = agents.length ? 'unverified' : 'not_required';
@@ -39,7 +43,7 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
     command: managerCommand('onboard', { api }),
     instruction: 'Choose Codex, Claude Code, or both, review upload permission, then review and trust the hooks in your agent.',
   };
-  return { issues, uploadApproved, activation, reviewConfigured: result.ready && uploadApproved, next, enableAutomaticReviews };
+  return { issues, uploadApproved, activation, reviewConfigured: result.ready && uploadApproved && !issues.some(i => i.code.startsWith('reviewer_policy_')), next, enableAutomaticReviews };
 }
 
 export class SetupError extends Error {

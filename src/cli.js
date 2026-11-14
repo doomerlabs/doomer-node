@@ -26,6 +26,8 @@ Setup options:
   --agent claude,codex         Agents to configure (interactive when omitted)
   --no-hooks                   Install for standalone reviews
   --approve-uploads            Approve all Doomer review uploads to this service
+  --reviewer-policy allow|decline  Decide the separately disclosed Codex policy
+  --reviewer-policy-proposal HASH  Digest from that exact proposal
   --from PATH.tgz              Install a local npm tarball before publication
   --json                       Machine-readable result
   --api-url URL                Service (or DOOMER_API_URL; default: https://doomer.ai/api)
@@ -37,9 +39,11 @@ export async function main(args) {
   const { values: options, positionals } = parseArgs({ args, allowPositionals: true, strict: true, options: {
     check: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
     agent: { type: 'string' },
+    'reviewer-policy': { type: 'string' }, 'reviewer-policy-proposal': { type: 'string' },
     'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
     json: { type: 'boolean' }, from: { type: 'string' }, 'cli-version': { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
   } });
+  if (options['reviewer-policy'] && (!['allow', 'decline'].includes(options['reviewer-policy']) || !['install', 'onboard'].includes(positionals[0]))) throw new Error('--reviewer-policy allow|decline is supported only by install and onboard, after reviewing the scoped proposal.');
   if (options.home) process.env[developmentInstall() ? 'DOOMER_DEV_HOME' : 'DOOMER_HOME'] = options.home;
   if (options.version) { console.log(metadata.version); return 0; }
   if (options.help || !positionals.length) { console.log(HELP); return 0; }
