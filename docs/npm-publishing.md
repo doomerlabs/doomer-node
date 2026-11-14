@@ -66,8 +66,10 @@ trusted publishing. That settings change is separate from this PR.
 
 ## Release
 
-1. Update `package.json` and `package-lock.json` to an unused SemVer;
-   review and merge the change. Wait for main's Depot checks to pass.
+1. Update `package.json` and `package-lock.json` to an unused SemVer. Set
+   `package.json`'s `doomer.cliVersion` to the exact Go release tested with this
+   installer; reject a stale pin before committing. Review and merge the change,
+   then wait for main's Depot checks to pass.
 2. Publish and verify the exact pinned Go CLI first. A beta installer must pin
    its tested Go beta; beta publication does not update the stable channel.
 3. Create an annotated `VERSION` tag at that exact main commit and push the tag.
