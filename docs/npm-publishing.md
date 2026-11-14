@@ -1,7 +1,8 @@
 # npm publishing
 
-The installer uses stable SemVer independently of the Go CLI version. Publish
-`0.0.2`, `0.0.3`, and so on; do not reuse an npm version or add a Node beta channel.
+The installer uses SemVer independently of the Go CLI version. Stable versions
+publish to `latest`; `-beta.N` versions publish to `beta` and must pin an exact
+Go CLI beta. Never reuse a published version.
 The initial `0.0.1` package was published manually. The first automated run verifies and tags that existing release; it never
 deletes or republishes its immutable npm bytes. Merging the workflow alone
 does not publish anything.
@@ -16,7 +17,7 @@ does not publish anything.
   and pull requests. Jev selection, dependency projections, signed R2 reuse,
   frozen component pins, and the existing credential isolation are preserved.
 - GitHub Actions runs `.github/workflows/publish.yml` only for numeric tag pushes,
-  on a GitHub-hosted runner. It requires an exact stable SemVer/package match,
+  on a GitHub-hosted runner. It requires an exact SemVer/package match,
   a commit reachable from main, and successful `ci / package` and
   `agent-e2e / onboarding` checks from the Depot GitHub App for that commit.
   It waits up to 20 minutes for checks; a failed check stops publication.
@@ -65,14 +66,15 @@ trusted publishing. That settings change is separate from this PR.
 
 ## Release
 
-1. Update `package.json` and `package-lock.json` to an unused stable SemVer;
+1. Update `package.json` and `package-lock.json` to an unused SemVer;
    review and merge the change. Wait for main's Depot checks to pass.
-2. Confirm the default stable Go download supports this installer before making
-   a normal customer release. A Go beta does not update the stable channel.
+2. Publish and verify the exact pinned Go CLI first. A beta installer must pin
+   its tested Go beta; beta publication does not update the stable channel.
 3. Create an annotated `VERSION` tag at that exact main commit and push the tag.
    For example, an authorized `0.0.2` release uses `0.0.2`.
 4. Follow the GitHub publishing job through registry verification. It publishes
-   to `latest`. Merging this workflow does not authorize a release/tag push.
+   to `latest` for stable versions or `beta` for prereleases. Merging this
+   workflow does not authorize a release/tag push.
 
 ### Formalizing the initial 0.0.1
 
