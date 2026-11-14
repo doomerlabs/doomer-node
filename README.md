@@ -28,25 +28,30 @@ Setup selects Claude Code, Codex, both, or standalone reviews, then:
 2. Replaces `~/.local/bin/doomer` with a link to the Go CLI, backing up an existing
    command. Add `~/.local/bin` to `PATH` if absent.
 3. Adds the global skill through the official skills CLI, equivalent to
-   `npx skills add 'doomerlabs/skills#feat/doomer-node-skill' --skill doomer --global`. Skills.sh counts
+   `npx skills add 'doomerlabs/skills#018f0a4c0059859edcee4bd8e2f722dd03c80321' --skill doomer --global`. Skills.sh counts
    come from that CLI's telemetry; user telemetry settings are respected.
 4. Installs agent hooks, preserving unrelated settings and hooks and backing
    up original configuration files.
 5. Offers global source-upload approval separately: “Allow Doomer reviews to
    upload source snapshots to Doomer (https://doomer.ai)?”
 
+After setup, the summary identifies the selected agents and whether source uploads are approved. Open `/hooks` in each agent to review and trust Doomer. Start a new session if the hooks have not loaded, then give the agent a small coding task. Doomer reviews the changes automatically; a completed review verifies activation. Declining uploads keeps automatic reviews off without undoing installation.
+
 The installer also downloads the Go CLI from the official stable channel and
 verifies its archive checksum. It installs versioned executables beside a `~/.local/bin/doomer` symlink, for
 example `doomer-2026.11.12.1`. Updates atomically switch the symlink, so running
 watches finish on the old executable while new watches use the new one.
 For a development build, set `DOOMER_NATIVE_BINARY` to the Go executable you
-built. The installer saves local builds as `~/.local/bin/doomer-dev` and points
-`doomer` at that file. Reinstalling atomically replaces `doomer-dev`.
+built. In the default profile, the installer saves local builds as
+`~/.local/bin/doomer-dev` and points `doomer` at that file. In explicit
+development mode (`DOOMER_DEV_INSTALL=1`), only `doomer-dev` is replaced;
+production `doomer` is preserved. These profiles cannot both own the same local
+build: keep production on a released binary before adding development mode.
 
-The integration requires a Go build with the foreground `watch` command and `watch agent-hook`, on the
-`feat/watch-all-changes` branch until released. An older stable release can run
-manual reviews, but doctor reports automatic reviews unavailable rather than
-silently claiming the watcher is ready.
+Automatic reviews require a Go CLI with the foreground `watch` command and
+`watch agent-hook`. An older release may support manual reviews while doctor
+reports automatic reviews unavailable. Use a compatible released CLI, or an
+explicitly selected candidate for authorized source testing.
 
 Explicit agent selection supports noninteractive installation:
 
@@ -59,10 +64,9 @@ A human can add `--approve-uploads` to authorize all Doomer review uploads to
 the configured service, across repositories and agents. Agents must not supply approval flags
 without the user's authorization. Native hook trust is always user managed.
 
-**Temporary testing source:** installation and updates currently fetch the skill
-from `feat/doomer-node-skill`, so local testing does not require merging skills
-PR #81. After that PR merges, change the source back to `doomerlabs/skills`.
-Publish this package to npm before advertising the public install command.
+The installer pins a reviewed skill commit in `src/skill-source.js`; it does not
+follow a moving feature branch. Update that pin only alongside onboarding
+validation. Registry installation requires this package to be published.
 For local testing from this checkout, the installer automatically persists the
 package you are running. No npm publication, manual pack, or `--from` is needed:
 
@@ -75,7 +79,7 @@ node bin/doomer.js install
 ## Installed the skill directly?
 
 ```sh
-npx skills add 'doomerlabs/skills#feat/doomer-node-skill' --skill doomer --global
+npx skills add 'doomerlabs/skills#018f0a4c0059859edcee4bd8e2f722dd03c80321' --skill doomer --global
 npx @doomerlabs/doomer onboard
 ```
 
@@ -96,6 +100,14 @@ doomer review get REVIEW_ID --workspace
 Run reviews directly with the installed Go CLI, `doomer`. The Node manager
 only installs and configures Doomer; it does not run or delegate reviews.
 Use `doomer review --help` for review options, upload permission, and result handling.
+
+## Diagnose setup
+
+Run `npx @doomerlabs/doomer doctor` for a readable diagnosis. `--json` includes structured `issues`, `next`, `uploadApproved` and `activation`. `ready` means installed configuration; it does not prove hook trust, upload consent or a completed review.
+
+Missing CLI or skill: rerun `onboard`. Missing hooks: run `install-hooks --agent codex` (or `claude`). Disabled hooks or invalid settings: follow the reported settings-file action; repair preserves those user choices. PATH conflicts: use the reported absolute executable or fix PATH instead of reinstalling. Missing upload approval: rerun `onboard` and review the consent prompt. Setup errors name the failed step and provide a command to resume after fixing it.
+
+For an expired account login, use `doomer login --device` for the same service and profile. For unavailable or rate-limited service, retain any review ID and retry later. Never report a failed request as a completed review. `doomer support bundle` saves local diagnostics; `--upload` explicitly shares them.
 
 ## Hooks and maintenance
 
@@ -194,8 +206,51 @@ the live service or alter your CLI. npm and skills.sh provide their own metrics;
 no additional Doomer installation telemetry is implemented yet. Live-service and
 native-agent acceptance testing remain release checks.
 
-`docs/github-actions-ci.yml` is a ready-to-enable Node 22/24 and macOS/Linux
-workflow. Move it to `.github/workflows/ci.yml` with a credential that has GitHub
-workflow-write permission. The current repository push credential does not.
+The active CI workflow is `.depot/workflows/agent-e2e.yml`, using the pinned
+shared runner in `doomerlabs/agent-e2e`. Test credentials stay in Doppler
+`doomer/test`. The older GitHub Actions example is not the active CI setup.
+See [release preparation](docs/release-preparation.md) for the staged rollout.
 
 License: Apache-2.0.
+
+## Development VM installation
+
+For a VM that already has a production installation, provision the following
+only in the local Node checkout's shell environment:
+
+```sh
+export DOOMER_DEV_INSTALL=1
+export DOOMER_NATIVE_BINARY="$HOME/workspace/doomer/bin/doomer"
+export DOOMER_HOOK_ROOT="$HOME/test-apps"
+export DOOMER_API_URL=http://localhost:3000/api
+export DOOMER_CONFIG_DIR="$HOME/.doomer-developer/doomer-testing"
+unset DOOMER_TOKEN
+```
+
+Then `npm pack && npx . install` installs the local binary as
+`~/.local/bin/doomer-dev`, keeps state in `~/.local/share/doomer-node-dev`, and
+adds development-owned hooks. Production's `doomer` executable, installer state,
+and hooks are preserved. Reinstalling either profile preserves the other's hook
+positions so Codex trust keys do not alternate. Uninstalling development keeps
+the shared skill used by production. Uninstalling production also preserves
+the shared skill while a development installation remains.
+
+The development hooks require the Go CLI's `--watch-root` support. That Go patch
+is currently paused and uncommitted, so this scoped setup is not yet available
+from the published branch. The instructions below apply once that dependency
+is committed and you build it yourself. Provision production hooks with
+`DOOMER_HOOK_ROOT="$HOME/workspace"` and development mode unset, so the two hook
+sets watch disjoint directory trees. Both sets call Go directly. A chat rooted
+above both trees starts one scoped watcher for each tree. New or changed hook
+definitions still require native trust once; environment switching does not
+rewrite them.
+
+To replace a saved production hook scope, set `DOOMER_HOOK_ROOT` to the new
+directory and rerun onboarding. Set `DOOMER_HOOK_ROOT=` to clear it. Development
+hooks still require a scope; `--no-hooks` can install without one.
+
+`doomer upgrade` delegates a Node-managed CLI to this manager's `upgrade` command.
+Unlike `update`, `upgrade` changes only the native executable: it does not install
+skills, change agent selection, rewrite hooks, or grant upload permission. Use
+`upgrade --check --json` to inspect the latest release without writing local state.
+Development/local candidate binaries remain user-managed.

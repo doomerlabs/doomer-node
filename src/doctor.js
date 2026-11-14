@@ -1,13 +1,14 @@
 import { access, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { delimiter, dirname, join } from 'node:path';
-import { metadata, nativePath, run } from './system.js';
+import { supportsWatch } from './native.js';
+import { delimiter, dirname, join, basename } from 'node:path';
+import { metadata, nativePath, developmentInstall, run } from './system.js';
 
-async function executableOnPath(env) {
+async function executableOnPath(env, name) {
   const extensions = process.platform === 'win32' ? (env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';') : [''];
   for (const directory of (env.PATH || '').split(delimiter).filter(Boolean)) {
     for (const extension of extensions) {
-      const file = join(directory, `doomer${extension}`);
+      const file = join(directory, `${name}${extension}`);
       try {
         await access(file, process.platform === 'win32' ? constants.F_OK : constants.X_OK);
         if ((await stat(file)).isFile()) return file;
@@ -36,18 +37,19 @@ export async function inspectNativeInstallation(state, env = process.env) {
     const resolved = await realpath(command);
     commandStatus = target && resolved === target ? (nativeStatus === 'available' ? 'available' : 'unusable') : 'different';
   } catch { /* Includes broken symlinks. */ }
-  const resolvedCommand = await executableOnPath(env);
+  const resolvedCommand = await executableOnPath(env, basename(command));
   let onPath = false;
   if (resolvedCommand && target) {
     try { onPath = await realpath(resolvedCommand) === target; } catch { /* Broken PATH entry. */ }
   }
-  return { native: target !== null, nativeStatus, nativeVersion, recordedNativeVersion: state.native?.version || null,
+  const capabilities = { watchAgentHook: commandStatus === 'available' && await supportsWatch(command) };
+  return { capabilities, native: target !== null, nativeStatus, nativeVersion, recordedNativeVersion: state.native?.version || null,
     commandInstalled: commandStatus === 'available', commandStatus, globalCommand: command, resolvedCommand, onPath };
 }
 
 export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COLOR' in process.env) && process.env.TERM !== 'dumb' } = {}) {
   const paint = (text, code) => color ? `\u001b[${code}m${text}\u001b[0m` : text;
-  const rows = [paint('Doomer installation', '1'), ''];
+  const rows = [paint(developmentInstall() ? 'Doomer development installation' : 'Doomer installation', '1'), ''];
   const row = (label, value, status = 'ok') => {
     const [symbol, code] = status === 'ok' ? ['✓', '32'] : status === 'warning' ? ['!', '33'] : ['✗', '31'];
     rows.push(`  ${paint(symbol, code)} ${label.padEnd(12)} ${value}`);
@@ -72,6 +74,36 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
   if (!result.automaticReviews) row('Watch', 'Current watch command unavailable', 'error');
   rows.push('', paint(result.ready ? 'Installation ready' : 'Installation needs attention', result.ready ? '32;1' : '33;1'));
   if (!result.onPath && result.commandInstalled) rows.push(`Add ${dirname(result.globalCommand)} to the front of PATH to use this installation.`);
-  rows.push(result.next);
+  for (const issue of result.issues || []) {
+    rows.push(`\n${issue.message}`);
+    if (issue.command) rows.push(`Run: ${issue.command}`);
+    if (issue.instruction) rows.push(issue.instruction);
+  }
+  if (!result.issues?.length) rows.push(result.next);
+  if (result.enableAutomaticReviews) rows.push('', 'Enable automatic reviews:', result.enableAutomaticReviews.command, result.enableAutomaticReviews.instruction);
   return rows.join('\n');
+}
+
+export function formatSetup(result) {
+  const names = result.agents.map(a => a === 'claude' ? 'Claude Code' : 'Codex').join(' and ');
+  const lines = [result.ready ? `Doomer is set up${names ? ` for ${names}` : ' for manual reviews'}.` : 'Doomer setup needs attention.',
+    `CLI: ${result.executable}`,
+    result.uploadApproved ? 'Source uploads: approved for this service.' : 'Source uploads: off.'];
+  if (result.issues.length) {
+    for (const issue of result.issues) {
+      lines.push('', issue.message);
+      if (issue.command) lines.push(`Run: ${issue.command}`);
+      if (issue.instruction) lines.push(issue.instruction);
+    }
+  }
+  if (result.agents.length) {
+    lines.push('', 'Next: open /hooks in your agent to review and trust Doomer.');
+    if (result.codexReload?.restartRequired) lines.push('Codex: start a new session to load the hooks.');
+    if (result.agents.includes('claude')) lines.push('Claude Code: start a new session if the hooks have not loaded.');
+    if (result.uploadApproved) lines.push('Then ask your agent for a small coding change. Doomer will review it automatically; a completed review confirms activation.');
+  } else {
+    lines.push('', result.next);
+    if (result.enableAutomaticReviews) lines.push('', 'Enable automatic reviews:', result.enableAutomaticReviews.command, result.enableAutomaticReviews.instruction);
+  }
+  return lines.join('\n');
 }

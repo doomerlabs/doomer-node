@@ -21,13 +21,25 @@ async function installation(t) {
 }
 
 test('doctor accepts rebuilt binaries and reports the running version', async t => {
-  const { root, state } = await installation(t);
+  const { root, binary, state } = await installation(t);
   const result = await inspectNativeInstallation(state, { PATH: root });
   assert.equal(result.nativeVersion, 'doomer dev (commit new)');
   assert.equal(result.recordedNativeVersion, 'doomer dev (commit old)');
   assert.equal(result.nativeStatus, 'available');
   assert.equal(result.commandInstalled, true);
   assert.equal(result.onPath, true);
+  assert.equal(result.capabilities.watchAgentHook, false, 'a version string alone is insufficient');
+  await writeFile(binary, `#!${process.execPath}\nconsole.log(process.argv.includes('--help') ? 'Watch recursively and review settled changes until stopped --agent --manager-home' : 'doomer dev');\n`);
+  assert.equal((await inspectNativeInstallation(state, { PATH: root })).capabilities.watchAgentHook, true);
+  await rm(join(root, 'doomer'));
+  await writeFile(join(root, 'doomer'), `#!${process.execPath}\nconsole.log('doomer other');\n`, { mode: 0o755 });
+  const replaced = await inspectNativeInstallation(state, { PATH: root });
+  assert.equal(replaced.commandStatus, 'different');
+  assert.equal(replaced.capabilities.watchAgentHook, false, 'do not attest a binary the hooks do not call');
+  await rm(join(root, 'doomer'));
+  await symlink(binary, join(root, 'doomer'));
+  await writeFile(binary, `#!${process.execPath}\nconsole.log(process.argv.includes('--help') ? 'Watch recursively and review settled changes until stopped' : 'doomer dev');\n`);
+  assert.equal((await inspectNativeInstallation(state, { PATH: root })).capabilities.watchAgentHook, false, 'generic watch alone is insufficient');
 });
 
 test('doctor distinguishes missing, unusable, and replaced executables', async t => {

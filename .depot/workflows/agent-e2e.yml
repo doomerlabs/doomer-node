@@ -1,0 +1,91 @@
+name: agent-e2e
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: agent-e2e-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+jobs:
+  onboarding:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: agent-e2e
+    defaults:
+      run:
+        working-directory: e2e-runner
+    env:
+      # Depot bootstrap only; test credentials remain in Doppler doomer/test.
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+      E2E_REPORT_DIR: /tmp/component-agent-e2e
+      COMPONENT_SOURCE: ${{ github.workspace }}/component
+      CANDIDATE_SOURCE: ${{ github.workspace }}/candidate-cli
+      COMPONENT_BASE: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: component
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check out pinned shared runner
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: doomerlabs/agent-e2e
+          token: ${{ secrets.AGENT_E2E_READ_TOKEN }}
+          ref: 1d6346abccfd2db96fe2fceb66624fc5a98711c0
+          path: e2e-runner
+          persist-credentials: false
+      - name: Resolve the pinned CLI candidate
+        id: candidate
+        run: |
+          python3 - <<'PYTHON' >> "$GITHUB_OUTPUT"
+          import json
+          print('ref='+json.load(open('tests/codexinstall/onboarding-inputs.json'))['cli_revision'])
+          PYTHON
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: doomerlabs/doomer
+          ref: ${{ steps.candidate.outputs.ref }}
+          path: candidate-cli
+          persist-credentials: false
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c
+        with:
+          go-version-file: e2e-runner/go.mod
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.20.0
+      - name: Select and run shared agent scenarios
+        run: |
+          python3 - <<'PYTHON'
+          import json,os,pathlib,subprocess
+          event=json.loads(pathlib.Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+          description=pathlib.Path(os.environ['RUNNER_TEMP'])/'component-description.txt'
+          description.write_text((event.get('pull_request') or {}).get('body') or '')
+          args=['python3','scripts/with-test-secrets.py','python3','scripts/run.py','--require-cache',
+                '--output',os.environ['E2E_REPORT_DIR'],'--changed-repo',os.environ['COMPONENT_SOURCE'],
+                '--description-file',str(description)]
+          if os.environ.get('COMPONENT_BASE'): args += ['--base',os.environ['COMPONENT_BASE']]
+          if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch': args.append('--full-suite')
+          args += ['--cli-source',os.environ['CANDIDATE_SOURCE'],'--node-source',os.environ['COMPONENT_SOURCE']]
+          raise SystemExit(subprocess.call(args))
+          PYTHON
+      - name: Validate selected result evidence
+        run: python3 scripts/verify-results.py "$E2E_REPORT_DIR"
+      - name: Retain selection and recordings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: agent-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/component-agent-e2e/selection
+            /tmp/component-agent-e2e/components.json
+            /tmp/component-agent-e2e/cache-plan.json
+            /tmp/component-agent-e2e/verified
+            /tmp/component-agent-e2e/suite-*
+            /tmp/component-agent-e2e/retries
+          if-no-files-found: error
+          retention-days: 14

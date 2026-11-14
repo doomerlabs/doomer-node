@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile, lstat, symlink, rename, rm } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { nativePath, hash, run, readState, changeState, atomicWrite, exists } from './system.js';
+import { nativePath, developmentInstall, otherState, hash, run, readState, changeState, atomicWrite, exists } from './system.js';
 
 const RELEASES = 'https://downloads.doomer.ai/cli/';
 
@@ -42,8 +42,16 @@ export function archiveBinary(archive) {
   return binary;
 }
 
-async function supportsWatch(binary) {
-  try { return (await run(binary, ['watch', '--help'])).toString().includes('Watch recursively and review settled changes until stopped'); }
+export async function supportsWatch(binary) {
+  try {
+    const options = { timeout: 5000, maxBytes: 16384 };
+    const [watch, hook] = await Promise.all([
+      run(binary, ['watch', '--help'], options),
+      run(binary, ['watch', 'agent-hook', '--help'], options),
+    ]);
+    return watch.toString().includes('Watch recursively and review settled changes until stopped')
+      && hook.toString().includes('--manager-home') && hook.toString().includes('--agent');
+  }
   catch { return false; }
 }
 
@@ -51,8 +59,10 @@ async function activateNative(native) {
   const executable = nativePath();
   const temporary = join(dirname(executable), `.doomer-${randomBytes(8).toString('hex')}`);
   try {
-    await symlink(basename(native.path), temporary);
-    await rename(temporary, executable);
+    if (resolve(native.path) !== executable) {
+      await symlink(basename(native.path), temporary);
+      await rename(temporary, executable);
+    }
   } finally { await rm(temporary, { force: true }); }
   await changeState(state => {
     state.native = native;
@@ -69,34 +79,86 @@ async function installVersion(binary, version, source) {
   if (!/^[a-z0-9][a-z0-9._-]*$/i.test(suffix)) throw new Error('Invalid native CLI version.');
   const path = join(dirname(nativePath()), `doomer-${suffix}`);
   if (source === 'local') {
+    const other = await otherState();
+    if (other.native?.path === path && other.binaries?.[path]) throw new Error('The other installation uses doomer-dev. Keep production on a released binary before installing a separate development build.');
     await atomicWrite(path, binary, 0o755);
   } else if (await exists(path)) {
     if (!(await lstat(path)).isFile() || hash(await readFile(path)) !== sha256) throw new Error(`Installed version differs: ${path}`);
   } else await atomicWrite(path, binary, 0o755);
   const reported = (await run(path, ['--version'])).toString().trim();
-  if (source === 'stable' && !reported.includes(version)) throw new Error('Native CLI version does not match the release manifest.');
+  if (source !== 'local' && !new RegExp(`^doomer\\s+${version.replaceAll('.', '\\.')}($|\\s)`).test(reported)) throw new Error('Native CLI version does not match the release manifest.');
   return activateNative({ path, version, source, sha256, watch: await supportsWatch(path) });
 }
 
-export async function installNative({ update = false } = {}) {
+export function validateCLIVersion(version) {
+  if (version === undefined) return;
+  if (!/^20\d{2}\.\d{1,2}\.\d{1,2}(?:\.\d+)?(?:-beta\.\d+)?$/.test(version)) throw new Error('Invalid --cli-version: expected a published Doomer release version.');
+  if (process.env.DOOMER_NATIVE_BINARY || developmentInstall()) throw new Error('--cli-version cannot be combined with a local development CLI.');
+}
+
+export async function installNative({ update = false, version } = {}) {
+  validateCLIVersion(version);
   const state = await readState();
+  if (developmentInstall() && !process.env.DOOMER_NATIVE_BINARY) throw new Error('Development installation requires DOOMER_NATIVE_BINARY pointing to your locally built Go CLI.');
   if (process.env.DOOMER_NATIVE_BINARY) {
     const source = resolve(process.env.DOOMER_NATIVE_BINARY);
     const version = (await run(source, ['--version'])).toString().trim();
     return installVersion(await readFile(source), version, 'local');
   }
   const installed = state.native;
-  if (!update && installed?.path && dirname(installed.path) === dirname(nativePath()) && state.binaries?.[installed.path] && await exists(installed.path)) {
+  const selectedVersion = version ?? (installed?.source === 'pinned' ? installed.version : undefined);
+  validateCLIVersion(selectedVersion);
+  if (!update && (!selectedVersion || (installed?.source === 'pinned' && installed.version === selectedVersion)) && installed?.path && dirname(installed.path) === dirname(nativePath()) && state.binaries?.[installed.path] && await exists(installed.path)) {
     if (!(await lstat(installed.path)).isFile() || hash(await readFile(installed.path)) !== installed.sha256) throw new Error('Installed native CLI has changed. Reinstall with DOOMER_NATIVE_BINARY or update.');
     return activateNative({ ...installed, watch: await supportsWatch(installed.path) });
   }
+  const { manifest, asset } = selectedVersion ? await pinnedRelease(selectedVersion) : await stableRelease();
+  const archive = await download(asset.url, 64 * 1024 * 1024);
+  if (hash(archive) !== asset.sha256) throw new Error('Native release checksum mismatch.');
+  return installVersion(archiveBinary(archive), manifest.version, selectedVersion ? 'pinned' : 'stable');
+}
+
+async function pinnedRelease(version) {
+  const platform = `${process.platform}_${{ x64: 'amd64', arm64: 'arm64' }[process.arch] || 'unsupported'}`;
+  const name = `doomer_${version}_${platform}.tar.gz`;
+  const base = `${RELEASES}releases/${version}/`;
+  const manifest = JSON.parse((await download(`${base}release-manifest.json`, 1024 * 1024)).toString());
+  const digest = manifest.artifacts?.[name];
+  if (manifest.schemaVersion !== 1 || manifest.version !== version || !/^sha256:[a-f0-9]{64}$/.test(digest)) throw new Error(`No valid native CLI release ${version} for ${platform}.`);
+  return { manifest, asset: { url: `${base}${name}`, sha256: digest.slice(7) } };
+}
+
+async function stableRelease() {
   const platform = `${process.platform}_${{ x64: 'amd64', arm64: 'arm64' }[process.arch] || 'unsupported'}`;
   const manifest = JSON.parse((await download(`${RELEASES}stable.json`, 1024 * 1024)).toString());
   const asset = manifest.assets?.[platform];
   if (manifest.schema_version !== 1 || !/^20\d{2}\.\d{1,2}\.\d{1,2}\.\d+$/.test(manifest.version) || !asset || !/^[a-f0-9]{64}$/.test(asset.sha256)) throw new Error(`No valid native CLI release for ${platform}.`);
   const expectedURL = `${RELEASES}releases/${manifest.version}/doomer_${manifest.version}_${platform}.tar.gz`;
   if (asset.url !== expectedURL) throw new Error('Native release URL does not match its version.');
-  const archive = await download(asset.url, 64 * 1024 * 1024);
-  if (hash(archive) !== asset.sha256) throw new Error('Native release checksum mismatch.');
-  return installVersion(archiveBinary(archive), manifest.version, 'stable');
+  return { manifest, asset };
+}
+
+// CLI-only maintenance never installs skills or rewrites agent hook settings.
+export async function upgradeNative({ check = false } = {}) {
+  const state = await readState();
+  const current = state.native;
+  if (current?.source === 'pinned') throw new Error('This CLI is pinned. Run install --cli-version VERSION to select another release.');
+  if (!current || current.source !== 'stable' || developmentInstall() || process.env.DOOMER_NATIVE_BINARY) {
+    throw new Error('CLI-only upgrade requires a released Node-managed installation; development binaries remain user-built.');
+  }
+  if (!state.binaries?.[current.path] || !(await exists(current.path)) || !(await lstat(current.path)).isFile() || hash(await readFile(current.path)) !== current.sha256) {
+    throw new Error('Installed native CLI has changed; repair the installation before upgrading.');
+  }
+  const { manifest, asset } = await stableRelease();
+  const parts = value => value.split('.').map(Number);
+  if (!/^20\d{2}\.\d{1,2}\.\d{1,2}\.\d+$/.test(current.version)) throw new Error('Invalid installed CLI version.');
+  const previous = parts(current.version), next = parts(manifest.version);
+  const first = next.findIndex((value, i) => value !== previous[i]);
+  const available = first >= 0 && next[first] > previous[first];
+  if (!check && available) {
+    const archive = await download(asset.url, 64 * 1024 * 1024);
+    if (hash(archive) !== asset.sha256) throw new Error('Native release checksum mismatch.');
+    await installVersion(archiveBinary(archive), manifest.version, 'stable');
+  }
+  return { state: available ? (check ? 'update_available' : 'updated') : 'current', currentVersion: current.version, latestVersion: manifest.version, manager: 'node' };
 }

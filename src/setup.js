@@ -1,16 +1,18 @@
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
-import { join, resolve, dirname, delimiter } from 'node:path';
-import { mkdir, mkdtemp, rm, lstat, stat, access, readFile, readdir } from 'node:fs/promises';
+import { join, resolve, dirname, delimiter, isAbsolute } from 'node:path';
+import { mkdir, mkdtemp, rm, lstat, stat, access, readFile, readdir, realpath } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { agents, hookFile, installHooks, checkHooks, globalSkillPaths } from './hooks.js';
-import { paths, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
+import { paths, developmentInstall, selectedHookRoot, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
 import { resolveAPI } from './api.js';
 import { uploadPrompt, acceptsUploadAnswer } from './permissions.js';
-import { installNative } from './native.js';
-import { reloadCodexHooks, reloadMessage } from './codex.js';
+import { installNative, validateCLIVersion } from './native.js';
+import { reloadCodexHooks } from './codex.js';
 import { inspectNativeInstallation } from './doctor.js';
+import { SKILL_SOURCE } from './skill-source.js';
+import { installationGuidance, managerCommand, setupStep } from './recovery.js';
 
 export async function question(text) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error('Interactive setup requires a terminal. Pass --agent claude,codex or --no-hooks.');
@@ -115,8 +117,7 @@ export async function installCLI({ from, version } = {}) {
 export async function installSkill(selected) {
   // npm exec launches the same official skills CLI as npx skills add; its own
   // telemetry supplies skills.sh counts. Respect the user's telemetry settings.
-  // Temporary testing source until skills PR #81 is merged.
-  const args = ['exec', '--yes', '--package=skills', '--', 'skills', 'add', 'doomerlabs/skills#feat/doomer-node-skill', '--skill', 'doomer', '--global', '--yes'];
+  const args = ['exec', '--yes', '--package=skills', '--', 'skills', 'add', SKILL_SOURCE, '--skill', 'doomer', '--global', '--yes'];
   if (selected.length) args.push('--agent', ...selected.map(a => a === 'claude' ? 'claude-code' : a));
   else args.push('--agent', 'codex'); // Store the global skill without installing any hooks.
   await npm(args, { stdio: ['inherit', 2, 2] });
@@ -141,6 +142,9 @@ export async function skillPresent(selected = []) {
 
 export async function configure(selected, runtime, options) {
   const installed = [];
+  if (Object.hasOwn(process.env, 'DOOMER_HOOK_ROOT')) {
+    await changeState(s => { if (process.env.DOOMER_HOOK_ROOT) s.hookRoot = process.env.DOOMER_HOOK_ROOT; else delete s.hookRoot; });
+  }
   for (const agent of selected) installed.push(await installHooks(agent, runtime));
   await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; s.api = resolveAPI(options['api-url'], s.api); });
   if (options['approve-uploads']) {
@@ -182,22 +186,30 @@ export async function grant(api) {
 }
 
 export async function setup(options, { forceSkill = true } = {}) {
+  validateCLIVersion(options['cli-version']);
   resolveAPI(options['api-url'], (await readState()).api);
   const selected = await selectAgents(options);
+  if (developmentInstall() && !process.env.DOOMER_NATIVE_BINARY) throw new Error('Development installation requires DOOMER_NATIVE_BINARY.');
+  const hookRoot = selectedHookRoot(await readState());
+  if (developmentInstall() && selected.length && !hookRoot) throw new Error('Development hooks require DOOMER_HOOK_ROOT pointing to your test-apps directory.');
+  if (hookRoot && selected.length) {
+    if (!isAbsolute(hookRoot) || !(await stat(hookRoot).catch(() => null))?.isDirectory()) throw new Error('DOOMER_HOOK_ROOT must be an existing absolute directory. Set DOOMER_HOOK_ROOT to a new directory, or to an empty value to clear the saved scope.');
+    if (process.env.DOOMER_HOOK_ROOT) process.env.DOOMER_HOOK_ROOT = await realpath(hookRoot);
+  }
   await rm(join(paths().home,'uninstalling.json'),{force:true});
-  const installed = await installCLI({ from: options.from });
-  const native = await installNative();
+  const retry = managerCommand('onboard', { agents: selected, api: options['api-url'], cliVersion: options['cli-version'] });
+  const installed = await setupStep('Installing the manager', retry, () => installCLI({ from: options.from }));
+  const native = await setupStep('Installing the Go CLI', retry, () => installNative({ version: options['cli-version'] }));
   if (forceSkill || !await skillPresent(selected)) {
     console.error('Adding the doomer skill through the official skills CLI…');
-    await installSkill(selected);
+    await setupStep('Installing the skill', retry, () => installSkill(selected));
   }
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
-  await configure(selected, native.executable, options);
+  await setupStep('Configuring agent hooks', retry, () => configure(selected, native.executable, options));
   const result = { ...installed, ...native, agents: selected, ...(await doctor()) };
   if(selected.includes('codex')) {
     result.codexReload=await reloadCodexHooks();
-    const message=reloadMessage(result.codexReload);
-    result.next=result.ready ? message : `${result.next} ${message}`;
+
   }
   return result;
 }
@@ -207,20 +219,15 @@ export async function doctor() {
   const runtime = state.runtime;
   const cli = !!runtime && await exists(runtime);
   const inspection = await inspectNativeInstallation(state);
-  const automaticReviews = state.agents.length === 0 || state.native?.watch === true;
+  const automaticReviews = inspection.capabilities.watchAgentHook;
   const hooks = await Promise.all(state.agents.map(agent => checkHooks(agent, state.executable)));
   const skill = await skillPresent(state.agents);
   const ready = cli && inspection.nativeStatus === 'available' && automaticReviews && inspection.commandInstalled && skill && hooks.every(h => h.configured && h.enabled);
-  const next = !cli || inspection.nativeStatus !== 'available' || !inspection.commandInstalled || !skill
-    ? 'Run npx @doomerlabs/doomer onboard to repair the installation.'
-    : !automaticReviews ? 'Install a Go CLI with the current watch command using DOOMER_NATIVE_BINARY, then rerun onboard.'
-    : hooks.some(h => !h.configured) ? 'Run npx @doomerlabs/doomer install-hooks to repair agent hooks.'
-    : hooks.some(h => !h.enabled) ? 'Enable hooks in your agent settings.'
-    : state.agents.length ? 'Review and trust the Doomer hooks in /hooks. Configuration on disk does not verify activation.'
-    : 'Run doomer review to start a standalone review.';
-  return { ready, cli, ...inspection, automaticReviews, version: state.cliVersion || null,
+  const result = { ready, cli, ...inspection, automaticReviews, version: state.cliVersion || null,
     executable: state.executable || null, skill: skill ? 'installed' : 'missing', hooks,
-    uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })), next };
+    uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })) };
+  const api = resolveAPI(undefined, state.api);
+  return { ...result, ...installationGuidance(result, { api, localNative: state.native?.source === 'local', uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === api) }) };
 }
 
 export async function update(options) {
@@ -236,8 +243,7 @@ export async function update(options) {
   const updated = { ...result, ...native, version, ...(await doctor()) };
   if(selected.includes('codex')) {
     updated.codexReload=await reloadCodexHooks();
-    const message=reloadMessage(updated.codexReload);
-    updated.next=updated.ready ? message : `${updated.next} ${message}`;
+
   }
   return updated;
 }

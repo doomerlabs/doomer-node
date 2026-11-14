@@ -4,21 +4,21 @@ import { mkdtemp, writeFile, readFile, mkdir, rm, lstat } from 'node:fs/promises
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { exec } from './helpers.js';
-import { entry, packageRoot } from '../src/system.js';
+import { entry, packageRoot, metadata } from '../src/system.js';
 
 test('global install replaces the old CLI, installs skills via official CLI, repairs hooks and supports skill-first onboarding', async t => {
   const home = await mkdtemp(join(tmpdir(), 'doomer-install-'));
   t.after(() => rm(home, { recursive: true, force: true }));
   const npm = join(home, 'fake-npm.mjs');
   const native = join(home, 'fake-go');
-  await writeFile(native, '#!/usr/bin/env node\nconsole.log(process.argv.includes("--help") ? "Watch recursively and review settled changes until stopped" : "doomer 2026.11.10.3");\n', {mode:0o755});
+  await writeFile(native, '#!/usr/bin/env node\nconsole.log(process.argv.includes("--help") ? "Watch recursively and review settled changes until stopped --manager-home --agent" : "doomer 2026.11.10.3");\n', {mode:0o755});
   await writeFile(npm, `
 import { cp, mkdir, writeFile, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
 const args = process.argv.slice(2);
 await appendFile(join(process.env.HOME, 'calls'), JSON.stringify(args)+'\\n');
 if (args[0] === 'pack') {
-  const name = 'doomerlabs-doomer-0.1.0.tgz';
+  const name = 'doomerlabs-doomer-${metadata.version}.tgz';
   await writeFile(join(args[args.indexOf('--pack-destination')+1], name), 'fixture');
   console.log(JSON.stringify([{filename:name}]));
 } else if (args[0] === 'install') {
@@ -30,7 +30,7 @@ if (args[0] === 'pack') {
   const root = join(process.env.HOME, '.agents', 'skills', 'doomer');
   await mkdir(root, { recursive: true });
   await writeFile(join(root, 'SKILL.md'), '---\\nname: doomer\\n---\\n');
-} else if (args[0] === 'view') console.log('"0.1.0"');
+} else if (args[0] === 'view') console.log('${JSON.stringify(metadata.version)}');
 else process.exit(1);
 `);
   const bin = join(home, '.local', 'bin'); await mkdir(bin, { recursive: true });
@@ -42,6 +42,7 @@ else process.exit(1);
   assert.equal(JSON.parse((await cli(['install', '--agent', 'codex', '--json'])).stdout).ready, true);
   const state = JSON.parse(await readFile(join(home, 'state', 'state.json')));
   assert.equal(state.executable, join(bin, 'doomer'));
+  assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).capabilities.watchAgentHook, true);
   assert.equal((await exec(state.executable, ['--version'], { env })).stdout.trim(), 'doomer 2026.11.10.3');
   assert.equal((await lstat(state.executable)).isSymbolicLink(), true);
   assert.equal(state.native.path, join(bin, 'doomer-dev'));
@@ -50,10 +51,10 @@ else process.exit(1);
   assert.equal(hooks.trust, 'keep'); assert.equal(hooks.hooks.Stop[0].hooks[0].command, 'echo keep');
   assert.match(hooks.hooks.Stop[1].hooks[0].command, /--owner=doomer-node/);
   assert.ok(hooks.hooks.Stop[1].hooks[0].command.includes(state.executable));
-  assert.equal((await exec(process.execPath, [state.hookLauncher, '--version'], { env })).stdout.trim(), '0.1.0');
+  assert.equal((await exec(process.execPath, [state.hookLauncher, '--version'], { env })).stdout.trim(), metadata.version);
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
   const calls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.ok(calls.some(args => args.includes('skills') && args.includes('doomerlabs/skills#feat/doomer-node-skill') && args.includes('doomer') && args.includes('--global')));
+  assert.ok(calls.some(args => args.includes('skills') && args.some(arg => /^doomerlabs\/skills#[a-f0-9]{40}$/.test(arg)) && args.includes('doomer') && args.includes('--global')));
   assert.ok(calls.some(args => args[0] === 'pack'), 'install persists the running package without a published npm version');
   assert.ok(calls.some(args => args[0] === 'install' && args.at(-1).endsWith('.tgz')));
   env.DOOMER_TOKEN = 'account-token-for-test';
@@ -78,6 +79,18 @@ else process.exit(1);
   assert.equal(JSON.parse(await readFile(join(codex, 'hooks.json'))).permissions, 'preserve');
   await cli(['update']);
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
+  // An explicitly empty override clears stale persisted scope without manual
+  // state editing or probing the old native binary before reinstalling it.
+  const stale = JSON.parse(await readFile(join(home, 'state', 'state.json')));
+  stale.hookRoot = join(home, 'deleted-scope');
+  await writeFile(join(home, 'state', 'state.json'), JSON.stringify(stale));
+  env.DOOMER_HOOK_ROOT = '';
+  await cli(['install-hooks', '--agent', 'codex']);
+  assert.equal(JSON.parse(await readFile(join(home, 'state', 'state.json'))).hookRoot, undefined);
+  assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
+  await writeFile(join(home, 'state', 'state.json'), JSON.stringify(stale));
+  await cli(['onboard', '--agent', 'codex']);
+  assert.equal(JSON.parse(await readFile(join(home, 'state', 'state.json'))).hookRoot, undefined);
   const updatedHooks = JSON.parse(await readFile(join(codex, 'hooks.json')));
   assert.equal(updatedHooks.hooks.Stop[0].hooks[0].command, hooks.hooks.Stop[1].hooks[0].command, 'updates retain the stable hook command');
 });
