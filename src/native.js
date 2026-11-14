@@ -110,7 +110,7 @@ export async function installNative({ update = false, version, packageMetadata =
   if (packageMetadata.version.includes('-beta.') && !packagePin) throw new Error('Beta installer is missing its tested Go CLI version.');
   const selectedVersion = version ?? (installed?.source === 'pinned' ? installed.version : undefined) ?? packagePin;
   validateCLIVersion(selectedVersion);
-  if (!update && (!selectedVersion || (['pinned', 'package-pinned'].includes(installed?.source) && installed.version === selectedVersion)) && installed?.path && dirname(installed.path) === dirname(nativePath()) && state.binaries?.[installed.path] && await exists(installed.path)) {
+  if (!update && !(installed?.source === 'package-pinned' && !packagePin) && (!selectedVersion || (['pinned', 'package-pinned'].includes(installed?.source) && installed.version === selectedVersion)) && installed?.path && dirname(installed.path) === dirname(nativePath()) && state.binaries?.[installed.path] && await exists(installed.path)) {
     if (!(await lstat(installed.path)).isFile() || hash(await readFile(installed.path)) !== installed.sha256) throw new Error('Installed native CLI has changed. Reinstall with DOOMER_NATIVE_BINARY or update.');
     return activateNative({ ...installed, watch: await supportsWatch(installed.path) });
   }

@@ -77,8 +77,9 @@ else process.exit(1);
   await cli(['install-hooks', '--agent', 'codex']);
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
   assert.equal(JSON.parse(await readFile(join(codex, 'hooks.json'))).permissions, 'preserve');
+  const callsBeforeUpdate = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').length;
   await cli(['update']);
-  const updateCalls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);
+  const updateCalls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').slice(callsBeforeUpdate).map(JSON.parse);
   assert.ok(updateCalls.some(args => args[0] === 'view' && args[1] === '@doomerlabs/doomer@beta'));
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
   // Legacy environment overrides cannot restore obsolete global scope.
