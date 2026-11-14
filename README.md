@@ -173,7 +173,7 @@ npx @doomerlabs/doomer uninstall
 ```
 
 From an unpublished checkout, use `node bin/doomer.js uninstall` or package it
-with `npm pack` and run `npx --yes ./doomerlabs-doomer-0.1.0.tgz uninstall`.
+with `npm pack` and run `npx --yes ./doomerlabs-doomer-VERSION.tgz uninstall`.
 
 Uninstall disables the managed hooks, stops its native watchers, removes the
 global `doomer` link when it still points to a managed executable, removes the
@@ -206,10 +206,12 @@ the live service or alter your CLI. npm and skills.sh provide their own metrics;
 no additional Doomer installation telemetry is implemented yet. Live-service and
 native-agent acceptance testing remain release checks.
 
-The active CI workflow is `.depot/workflows/agent-e2e.yml`, using the pinned
-shared runner in `doomerlabs/agent-e2e`. Test credentials stay in Doppler
-`doomer/test`. The older GitHub Actions example is not the active CI setup.
-See [release preparation](docs/release-preparation.md) for the staged rollout.
+Depot runs package checks and the pinned shared `doomerlabs/agent-e2e` runner
+on main pushes and pull requests. Test credentials stay in Doppler
+`doomer/test`. GitHub Actions handles only numeric release tags, publishing through
+npm trusted publishing after verifying Depot checks and the tested tarball.
+See [npm publishing](docs/npm-publishing.md) for setup and release instructions,
+and [release preparation](docs/release-preparation.md) for the customer rollout.
 
 License: Apache-2.0.
 

@@ -1,5 +1,7 @@
 # Release preparation
 
+The automated Node publication path is documented in [npm publishing](npm-publishing.md).
+
 This is a preparation checklist, not authorization to merge, publish, deploy,
 change credentials, or alter an installed CLI. Keep the current PRs open and
 held with `/doomer no-approve` until the user explicitly authorizes release work.
@@ -9,7 +11,7 @@ held with `/doomer no-approve` until the user explicitly authorizes release work
 - The manager installs `@doomerlabs/doomer` and the native Go CLI separately.
 - The production skill source is the reviewed immutable commit in
   `src/skill-source.js`; it must exist and pass the onboarding rehearsal.
-- The package version is currently `0.1.0`. Confirm the version is still unused
+- The initial public package is `0.0.1`; use a new stable SemVer for the next release. Confirm the selected version is still unused
   immediately before authorized publication; never overwrite a published version.
 - Pack with `npm pack --ignore-scripts` and inspect the actual tarball. Test that
   tarball in a disposable home before publishing. Record its integrity digest.
@@ -47,7 +49,7 @@ rehearsal artifacts. On an actual Mac with Node.js 22+, npm, Git and Python 3.9+
 python3 scripts/rehearse-release-macos.py \
   --bundle /absolute/path/to/go-rehearsal.zip \
   --bundle-sha256 EXPECTED_BUNDLE_SHA256 \
-  --package /absolute/path/to/doomerlabs-doomer-0.1.0.tgz \
+  --package /absolute/path/to/doomerlabs-doomer-VERSION.tgz \
   --package-sha256 EXPECTED_SHA256
 ```
 

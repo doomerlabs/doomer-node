@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "name": "@doomerlabs/doomer",
+  "version": "0.0.1",
+  "sourceCommit": "6cf78a361a36540580135facfb1a35e0d4fa6fb6",
+  "publication": "manual",
+  "integrity": "sha512-eN2I5ake0UYrUiIlyArsbdGC2s2sNejR83JmnogYBM+SiFgrR57qRResHJgX2aW0RtYp8sdBtomCeV76kz2K0g==",
+  "files": {
+    "LICENSE": {
+      "sha256": "566c2ec6d3468281378d0735aaa1aec50be3eb3bf0b29d64629821aaabebba8d",
+      "mode": 420
+    },
+    "src/api.js": {
+      "sha256": "8906a4207784a753f70b394a898bbd190098a58bd793dae018ade7287d1b94c4",
+      "mode": 420
+    },
+    "src/cli.js": {
+      "sha256": "9feeab2a82d81247af5f12f176530ec1687f02146ebd53ac951294fd2a586d34",
+      "mode": 420
+    },
+    "src/codex.js": {
+      "sha256": "cb487e0b1efd8aa7f4c46eea91b3718f6832c523073ff6ee990ac2991ea5d9b9",
+      "mode": 420
+    },
+    "src/doctor.js": {
+      "sha256": "ed28ee613d01a7a8a95de726c4d6df9da535b1505eb5b9da113d58b25845d1ea",
+      "mode": 420
+    },
+    "bin/doomer.js": {
+      "sha256": "49a43b1a064adcf77a9d5a1161f475ffa0b017d51d214792f7d92b8430906daa",
+      "mode": 493
+    },
+    "src/hooks.js": {
+      "sha256": "c87bdd5789de3b4afcce8ce962010713620394474f190507ea1f8738e6a47dee",
+      "mode": 420
+    },
+    "src/native.js": {
+      "sha256": "7a30cfd855d16d62ff62e19f5482ecbe45a6c7d55aaf24d3d30521cccd6efd3f",
+      "mode": 420
+    },
+    "src/permissions.js": {
+      "sha256": "1e9180ed5f5f845d0bf3fd2a306e4e75a2414b862af54186ae0c2d37c8e74ef3",
+      "mode": 420
+    },
+    "src/recovery.js": {
+      "sha256": "1b5c385260901496a664d98b03f7d135ea4c2b42c7d71bed55c69b3d4cda7c92",
+      "mode": 420
+    },
+    "src/setup.js": {
+      "sha256": "f663e18f2575bd0cffe48f57b0b04f65078260a0fd96170cf1793ebfb1036866",
+      "mode": 420
+    },
+    "src/skill-source.js": {
+      "sha256": "e8fcf84689aac90c8cfa05245bb51d7b5f08b63049e014230e8a21bf42d2a9b5",
+      "mode": 420
+    },
+    "src/system.js": {
+      "sha256": "076030560c01fff8465ecd8c35d6f8316b07c96919296c0aac0ce360f38f1220",
+      "mode": 420
+    },
+    "src/uninstall.js": {
+      "sha256": "1ae30f5f11b9b4c2f5241882e52332089f38fb6abb02b82795792a298de74d16",
+      "mode": 420
+    },
+    "package.json": {
+      "sha256": "f926a8493454bdb5d3e4696fb6fe75b86953657a5ec4235370b25140ace3e4e5",
+      "mode": 420
+    },
+    "README.md": {
+      "sha256": "4eb062e14a84bb617056ef92271307abad7bc7ce67c0fe5ede10b11f33b1ee77",
+      "mode": 420
+    }
+  }
+}
