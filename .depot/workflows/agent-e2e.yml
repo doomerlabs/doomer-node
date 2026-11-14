@@ -41,17 +41,12 @@ jobs:
           ref: 1d6346abccfd2db96fe2fceb66624fc5a98711c0
           path: e2e-runner
           persist-credentials: false
-      - name: Resolve the pinned CLI candidate
-        id: candidate
-        run: |
-          python3 - <<'PYTHON' >> "$GITHUB_OUTPUT"
-          import json
-          print('ref='+json.load(open('tests/codexinstall/onboarding-inputs.json'))['cli_revision'])
-          PYTHON
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: doomerlabs/doomer
-          ref: ${{ steps.candidate.outputs.ref }}
+          # Source of the published 2026.11.13.1-beta.1 candidate, including
+          # Claude-specific retrieval/Stop feedback; do not use older defaults.
+          ref: 03b1d3e50f2f3015a59b623dc6cc14ef0247f10f
           path: candidate-cli
           persist-credentials: false
       - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c
