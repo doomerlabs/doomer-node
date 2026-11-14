@@ -4,6 +4,8 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
+import { pack } from './release.mjs';
 import { execFile } from 'node:child_process';
 const exec = promisify(execFile);
 const home = await mkdtemp(join(tmpdir(), 'doomer-real-install-'));
@@ -14,7 +16,19 @@ Object.assign(env, {
   DOOMER_HOME: join(home, 'manager'), DOOMER_BIN_DIR: join(home, 'bin'),
 });
 try {
-  const { stdout } = await exec(process.execPath, [resolve('bin/doomer.js'), 'install', '--agent', 'codex', '--json'], {
+  const artifactDirectory = process.argv[2] ? resolve(process.argv[2]) : join(home, 'artifact');
+  const evidence = process.argv[2]
+    ? JSON.parse(await readFile(join(artifactDirectory, 'evidence.json'), 'utf8'))
+    : (await pack(artifactDirectory)).evidence;
+  const tarball = join(artifactDirectory, `doomerlabs-doomer-${evidence.version}.tgz`);
+  const actualIntegrity = 'sha512-' + createHash('sha512').update(await readFile(tarball)).digest('base64');
+  assert.equal(actualIntegrity, evidence.integrity, 'rehearse exactly the recorded npm artifact');
+  const prefix = join(home, 'candidate');
+  await exec('npm', ['install', '--prefix', prefix, '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', tarball], {
+    env, timeout: 120000, maxBuffer: 4 * 1024 * 1024,
+  });
+  const executable = join(prefix, 'node_modules', '@doomerlabs', 'doomer', 'bin', 'doomer.js');
+  const { stdout } = await exec(process.execPath, [executable, 'install', '--agent', 'codex', '--json'], {
     cwd: process.cwd(), env, timeout: 180000, maxBuffer: 4 * 1024 * 1024,
   });
   const result = JSON.parse(stdout);
@@ -26,7 +40,7 @@ try {
   assert.match(await readFile(join(home, '.agents/skills/doomer/SKILL.md'), 'utf8'), /^name:\s*doomer\s*$/m);
   const hooks = JSON.parse(await readFile(join(home, '.codex/hooks.json'), 'utf8'));
   assert.ok(hooks.hooks.UserPromptSubmit.some(group => group.hooks.some(hook => hook.command.includes(' watch agent '))));
-  console.log('Real isolated install passed: pinned Go CLI, pinned skill and Codex hooks; no upload approval.');
+  console.log('Packed-artifact isolated install passed: pinned Go CLI, pinned skill and Codex hooks; no upload approval.');
 } finally {
   await rm(home, { recursive: true, force: true });
 }
