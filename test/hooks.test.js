@@ -20,7 +20,7 @@ test('hook repair is idempotent and preserves old Doomer, unrelated hooks, permi
   assert.match(hookCommand('claude', "/a/quote'/cli.js"), /'"'"'/);
   assert.equal(original.hooks.Stop.length, 1);
   const command = next.hooks.Stop[1].hooks[0].command;
-  assert.match(command, /watch agent/);
+  assert.match(command, /watch agent --agent=/);
   assert.match(command, /--manager-home=/);
   assert.ok(!command.includes(process.execPath));
   assert.ok(!command.includes('hook.cjs'));
@@ -40,15 +40,15 @@ test('production and development hook slots stay stable across reinstalls', t =>
   const previous = process.env.DOOMER_DEV_INSTALL;
   t.after(() => { if (previous === undefined) delete process.env.DOOMER_DEV_INSTALL; else process.env.DOOMER_DEV_INSTALL = previous; });
   delete process.env.DOOMER_DEV_INSTALL;
-  const prod = mergeHooks({}, 'codex', '/bin/doomer', '/workspace');
+  const prod = mergeHooks({}, 'codex', '/bin/doomer');
   process.env.DOOMER_DEV_INSTALL = '1';
-  const both = mergeHooks(prod, 'codex', '/bin/doomer-dev', '/test-apps');
+  const both = mergeHooks(prod, 'codex', '/bin/doomer-dev');
   assert.deepEqual(both.hooks.Stop[0], prod.hooks.Stop[0]);
   assert.match(both.hooks.Stop[1].hooks[0].command, /--owner=doomer-node-dev/);
   assert.doesNotMatch(both.hooks.Stop[1].hooks[0].command, /--watch-root/);
-  assert.deepEqual(mergeHooks(both, 'codex', '/bin/doomer-dev', '/test-apps'), both);
+  assert.deepEqual(mergeHooks(both, 'codex', '/bin/doomer-dev'), both);
   delete process.env.DOOMER_DEV_INSTALL;
-  assert.deepEqual(mergeHooks(both, 'codex', '/bin/doomer', '/workspace'), both);
+  assert.deepEqual(mergeHooks(both, 'codex', '/bin/doomer'), both);
 });
 
 

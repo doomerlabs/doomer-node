@@ -258,3 +258,21 @@ Unlike `update`, `upgrade` changes only the native executable: it does not insta
 skills, change agent selection, rewrite hooks, or grant upload permission. Use
 `upgrade --check --json` to inspect the latest release without writing local state.
 Development/local candidate binaries remain user-managed.
+
+
+## npm release channels
+
+Stable three-part tags such as `0.1.0` publish to npm's `latest` channel.
+Prerelease tags such as `0.1.0-beta.1` publish to `beta` without moving `latest`.
+The Git tag must exactly match package.json and package-lock.json. GitHub Actions
+publishes the exact package verified by Depot's package and real-agent checks.
+Published versions are immutable; retries verify the existing bytes.
+
+To test the beta installer with the matching Go CLI beta:
+
+```sh
+npx @doomerlabs/doomer@beta install --cli-version 2026.11.13.1-beta.2
+```
+
+The npm installer version and Go CLI version are independent. Choosing the npm
+beta channel does not implicitly switch the Go CLI release channel.

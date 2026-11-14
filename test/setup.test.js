@@ -83,7 +83,6 @@ else process.exit(1);
   const stale = JSON.parse(await readFile(join(home, 'state', 'state.json')));
   stale.hookRoot = join(home, 'deleted-scope');
   await writeFile(join(home, 'state', 'state.json'), JSON.stringify(stale));
-  env.DOOMER_HOOK_ROOT = '';
   await cli(['install-hooks', '--agent', 'codex']);
   assert.equal(JSON.parse(await readFile(join(home, 'state', 'state.json'))).hookRoot, undefined);
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);

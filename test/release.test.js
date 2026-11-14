@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { validateMetadata, completedEvidence, checkPublished, pack, verifyInitialRelease, packageFiles } from '../scripts/release.mjs';
+import { validateMetadata, completedEvidence, checkPublished, pack, verifyInitialRelease, packageFiles, releaseChannel } from '../scripts/release.mjs';
 
 const sha = 'a'.repeat(40);
 const evidence = { schema: 1, commit: sha, name: '@doomerlabs/doomer', version: '0.0.2', integrity: 'sha512-' + 'A'.repeat(86) + '==' };
@@ -14,7 +14,7 @@ const checks = () => ['ci / package', 'agent-e2e / onboarding'].map((name, i) =>
   output: { summary: `<!-- doomer-npm-package-v1\n${JSON.stringify(evidence)}\n-->` },
 }));
 
-test('release requires an exact stable SemVer tag and matching lockfile metadata', () => {
+test('release requires an exact SemVer tag and matching lockfile metadata', () => {
   const pkg = { name: '@doomerlabs/doomer', version: '0.0.2' };
   const lock = { ...pkg, packages: { '': pkg } };
   assert.deepEqual(validateMetadata(pkg, lock, '0.0.2'), pkg);
@@ -89,4 +89,24 @@ test('initial release adoption preserves immutable bytes and runtime files, allo
   assert.throws(() => verifyInitialRelease(changed, original, receipt), /file changed/);
   assert.throws(() => verifyInitialRelease(docs, changed, receipt), /immutable publication receipt/);
   assert.throws(() => verifyInitialRelease(archive({ 'package.json': '{"version":"0.0.1"}' }), original, receipt), /file set changed/);
+});
+
+
+test('beta releases use the beta channel and enforce exact prerelease metadata', () => {
+  const pkg = { name: '@doomerlabs/doomer', version: '0.1.0-beta.1' };
+  const lock = { ...pkg, packages: { '': pkg } };
+  assert.deepEqual(validateMetadata(pkg, lock, pkg.version), pkg);
+  assert.equal(releaseChannel(pkg.version), 'beta');
+  assert.equal(releaseChannel('0.1.0'), 'latest');
+  for (const version of ['0.1.0-beta.01', '0.1.0-rc.1', 'v0.1.0', '0.1.0;echo bad']) {
+    assert.throws(() => releaseChannel(version), /Invalid/);
+  }
+  const beta = { ...evidence, version: pkg.version };
+  assert.equal(checkPublished(beta, null, null), true);
+  assert.throws(() => checkPublished(beta, null, { version: '0.1.0-beta.2' }), /beta backwards/);
+  assert.equal(checkPublished({ ...beta, version: '0.1.0-beta.10' }, null, { version: '0.1.0-beta.2' }), true);
+  assert.throws(() => checkPublished(beta, null, { version: '0.1.0' }), /beta backwards/);
+  const betaChecks = checks();
+  betaChecks[0].output.summary = `<!-- doomer-npm-package-v1\n${JSON.stringify(beta)}\n-->`;
+  assert.deepEqual(completedEvidence(betaChecks, sha), beta);
 });
