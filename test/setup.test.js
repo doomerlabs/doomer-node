@@ -79,6 +79,8 @@ else process.exit(1);
   assert.equal(JSON.parse(await readFile(join(codex, 'hooks.json'))).permissions, 'preserve');
   await cli(['update']);
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
+  // Legacy environment overrides cannot restore obsolete global scope.
+  env.DOOMER_HOOK_ROOT = join(home, 'ignored-legacy-root');
   // Reinstall removes obsolete global scope; hooks use each session cwd.
   const stale = JSON.parse(await readFile(join(home, 'state', 'state.json')));
   stale.hookRoot = join(home, 'deleted-scope');
@@ -91,4 +93,5 @@ else process.exit(1);
   assert.equal(JSON.parse(await readFile(join(home, 'state', 'state.json'))).hookRoot, undefined);
   const updatedHooks = JSON.parse(await readFile(join(codex, 'hooks.json')));
   assert.equal(updatedHooks.hooks.Stop[0].hooks[0].command, hooks.hooks.Stop[1].hooks[0].command, 'updates retain the stable hook command');
+  assert.ok(!JSON.stringify(updatedHooks).includes(env.DOOMER_HOOK_ROOT));
 });
