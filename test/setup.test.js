@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, readFile, mkdir, rm, lstat } from 'node:fs/promises
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { exec } from './helpers.js';
-import { entry, packageRoot } from '../src/system.js';
+import { entry, packageRoot, metadata } from '../src/system.js';
 
 test('global install replaces the old CLI, installs skills via official CLI, repairs hooks and supports skill-first onboarding', async t => {
   const home = await mkdtemp(join(tmpdir(), 'doomer-install-'));
@@ -18,7 +18,7 @@ import { join } from 'node:path';
 const args = process.argv.slice(2);
 await appendFile(join(process.env.HOME, 'calls'), JSON.stringify(args)+'\\n');
 if (args[0] === 'pack') {
-  const name = 'doomerlabs-doomer-0.1.0.tgz';
+  const name = 'doomerlabs-doomer-${metadata.version}.tgz';
   await writeFile(join(args[args.indexOf('--pack-destination')+1], name), 'fixture');
   console.log(JSON.stringify([{filename:name}]));
 } else if (args[0] === 'install') {
@@ -30,7 +30,7 @@ if (args[0] === 'pack') {
   const root = join(process.env.HOME, '.agents', 'skills', 'doomer');
   await mkdir(root, { recursive: true });
   await writeFile(join(root, 'SKILL.md'), '---\\nname: doomer\\n---\\n');
-} else if (args[0] === 'view') console.log('"0.1.0"');
+} else if (args[0] === 'view') console.log('${JSON.stringify(metadata.version)}');
 else process.exit(1);
 `);
   const bin = join(home, '.local', 'bin'); await mkdir(bin, { recursive: true });
@@ -51,7 +51,7 @@ else process.exit(1);
   assert.equal(hooks.trust, 'keep'); assert.equal(hooks.hooks.Stop[0].hooks[0].command, 'echo keep');
   assert.match(hooks.hooks.Stop[1].hooks[0].command, /--owner=doomer-node/);
   assert.ok(hooks.hooks.Stop[1].hooks[0].command.includes(state.executable));
-  assert.equal((await exec(process.execPath, [state.hookLauncher, '--version'], { env })).stdout.trim(), '0.1.0');
+  assert.equal((await exec(process.execPath, [state.hookLauncher, '--version'], { env })).stdout.trim(), metadata.version);
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
   const calls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.ok(calls.some(args => args.includes('skills') && args.some(arg => /^doomerlabs\/skills#[a-f0-9]{40}$/.test(arg)) && args.includes('doomer') && args.includes('--global')));
