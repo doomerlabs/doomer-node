@@ -100,3 +100,12 @@ test('CLI-only upgrade check is read-only and applying preserves hooks and skill
   await exec(process.execPath, [fileURLToPath(fixture), home], {env: {...process.env,
     DOOMER_HOME:join(home,'state'), DOOMER_BIN_DIR:join(home,'bin'), DOOMER_NATIVE_BINARY:'', DOOMER_DEV_INSTALL:'0'}});
 });
+
+test('exact release selection verifies downloads, stays pinned and preserves the active CLI on failure', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'doomer-cli-pin-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const { fileURLToPath } = await import('node:url');
+  await exec(process.execPath, [fileURLToPath(new URL('./fixtures/cli-version.mjs', import.meta.url))], {
+    env: { ...process.env, DOOMER_HOME: join(home, 'state'), DOOMER_BIN_DIR: join(home, 'bin'), DOOMER_NATIVE_BINARY: '', DOOMER_DEV_INSTALL: '0' },
+  });
+});

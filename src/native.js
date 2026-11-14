@@ -86,11 +86,18 @@ async function installVersion(binary, version, source) {
     if (!(await lstat(path)).isFile() || hash(await readFile(path)) !== sha256) throw new Error(`Installed version differs: ${path}`);
   } else await atomicWrite(path, binary, 0o755);
   const reported = (await run(path, ['--version'])).toString().trim();
-  if (source === 'stable' && !reported.includes(version)) throw new Error('Native CLI version does not match the release manifest.');
+  if (source !== 'local' && !new RegExp(`^doomer\\s+${version.replaceAll('.', '\\.')}($|\\s)`).test(reported)) throw new Error('Native CLI version does not match the release manifest.');
   return activateNative({ path, version, source, sha256, watch: await supportsWatch(path) });
 }
 
-export async function installNative({ update = false } = {}) {
+export function validateCLIVersion(version) {
+  if (version === undefined) return;
+  if (!/^20\d{2}\.\d{1,2}\.\d{1,2}(?:\.\d+)?(?:-beta\.\d+)?$/.test(version)) throw new Error('Invalid --cli-version: expected a published Doomer release version.');
+  if (process.env.DOOMER_NATIVE_BINARY || developmentInstall()) throw new Error('--cli-version cannot be combined with a local development CLI.');
+}
+
+export async function installNative({ update = false, version } = {}) {
+  validateCLIVersion(version);
   const state = await readState();
   if (developmentInstall() && !process.env.DOOMER_NATIVE_BINARY) throw new Error('Development installation requires DOOMER_NATIVE_BINARY pointing to your locally built Go CLI.');
   if (process.env.DOOMER_NATIVE_BINARY) {
@@ -99,14 +106,26 @@ export async function installNative({ update = false } = {}) {
     return installVersion(await readFile(source), version, 'local');
   }
   const installed = state.native;
-  if (!update && installed?.path && dirname(installed.path) === dirname(nativePath()) && state.binaries?.[installed.path] && await exists(installed.path)) {
+  const selectedVersion = version ?? (installed?.source === 'pinned' ? installed.version : undefined);
+  validateCLIVersion(selectedVersion);
+  if (!update && (!selectedVersion || (installed?.source === 'pinned' && installed.version === selectedVersion)) && installed?.path && dirname(installed.path) === dirname(nativePath()) && state.binaries?.[installed.path] && await exists(installed.path)) {
     if (!(await lstat(installed.path)).isFile() || hash(await readFile(installed.path)) !== installed.sha256) throw new Error('Installed native CLI has changed. Reinstall with DOOMER_NATIVE_BINARY or update.');
     return activateNative({ ...installed, watch: await supportsWatch(installed.path) });
   }
-  const { manifest, asset } = await stableRelease();
+  const { manifest, asset } = selectedVersion ? await pinnedRelease(selectedVersion) : await stableRelease();
   const archive = await download(asset.url, 64 * 1024 * 1024);
   if (hash(archive) !== asset.sha256) throw new Error('Native release checksum mismatch.');
-  return installVersion(archiveBinary(archive), manifest.version, 'stable');
+  return installVersion(archiveBinary(archive), manifest.version, selectedVersion ? 'pinned' : 'stable');
+}
+
+async function pinnedRelease(version) {
+  const platform = `${process.platform}_${{ x64: 'amd64', arm64: 'arm64' }[process.arch] || 'unsupported'}`;
+  const name = `doomer_${version}_${platform}.tar.gz`;
+  const base = `${RELEASES}releases/${version}/`;
+  const manifest = JSON.parse((await download(`${base}release-manifest.json`, 1024 * 1024)).toString());
+  const digest = manifest.artifacts?.[name];
+  if (manifest.schemaVersion !== 1 || manifest.version !== version || !/^sha256:[a-f0-9]{64}$/.test(digest)) throw new Error(`No valid native CLI release ${version} for ${platform}.`);
+  return { manifest, asset: { url: `${base}${name}`, sha256: digest.slice(7) } };
 }
 
 async function stableRelease() {
@@ -123,6 +142,7 @@ async function stableRelease() {
 export async function upgradeNative({ check = false } = {}) {
   const state = await readState();
   const current = state.native;
+  if (current?.source === 'pinned') throw new Error('This CLI is pinned. Run install --cli-version VERSION to select another release.');
   if (!current || current.source !== 'stable' || developmentInstall() || process.env.DOOMER_NATIVE_BINARY) {
     throw new Error('CLI-only upgrade requires a released Node-managed installation; development binaries remain user-built.');
   }

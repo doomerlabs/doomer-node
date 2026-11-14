@@ -8,7 +8,7 @@ import { agents, hookFile, installHooks, checkHooks, globalSkillPaths } from './
 import { paths, developmentInstall, selectedHookRoot, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
 import { resolveAPI } from './api.js';
 import { uploadPrompt, acceptsUploadAnswer } from './permissions.js';
-import { installNative } from './native.js';
+import { installNative, validateCLIVersion } from './native.js';
 import { reloadCodexHooks } from './codex.js';
 import { inspectNativeInstallation } from './doctor.js';
 import { SKILL_SOURCE } from './skill-source.js';
@@ -186,6 +186,7 @@ export async function grant(api) {
 }
 
 export async function setup(options, { forceSkill = true } = {}) {
+  validateCLIVersion(options['cli-version']);
   resolveAPI(options['api-url'], (await readState()).api);
   const selected = await selectAgents(options);
   if (developmentInstall() && !process.env.DOOMER_NATIVE_BINARY) throw new Error('Development installation requires DOOMER_NATIVE_BINARY.');
@@ -196,9 +197,9 @@ export async function setup(options, { forceSkill = true } = {}) {
     if (process.env.DOOMER_HOOK_ROOT) process.env.DOOMER_HOOK_ROOT = await realpath(hookRoot);
   }
   await rm(join(paths().home,'uninstalling.json'),{force:true});
-  const retry = managerCommand('onboard', { agents: selected, api: options['api-url'] });
+  const retry = managerCommand('onboard', { agents: selected, api: options['api-url'], cliVersion: options['cli-version'] });
   const installed = await setupStep('Installing the manager', retry, () => installCLI({ from: options.from }));
-  const native = await setupStep('Installing the Go CLI', retry, () => installNative());
+  const native = await setupStep('Installing the Go CLI', retry, () => installNative({ version: options['cli-version'] }));
   if (forceSkill || !await skillPresent(selected)) {
     console.error('Adding the doomer skill through the official skills CLI…');
     await setupStep('Installing the skill', retry, () => installSkill(selected));

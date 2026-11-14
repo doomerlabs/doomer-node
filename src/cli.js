@@ -38,13 +38,14 @@ export async function main(args) {
     check: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
     agent: { type: 'string' },
     'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
-    json: { type: 'boolean' }, from: { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
+    json: { type: 'boolean' }, from: { type: 'string' }, 'cli-version': { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
   } });
   if (options.home) process.env[developmentInstall() ? 'DOOMER_DEV_HOME' : 'DOOMER_HOME'] = options.home;
   if (options.version) { console.log(metadata.version); return 0; }
   if (options.help || !positionals.length) { console.log(HELP); return 0; }
   const [command, ...extra] = positionals;
   if (Object.hasOwn(options, 'check') && command !== 'upgrade') throw new Error('--check is supported only by upgrade.');
+  if (Object.hasOwn(options, 'cli-version') && !['install', 'onboard'].includes(command)) throw new Error('--cli-version is supported only by install and onboard.');
   if (extra.length) throw new Error('Unexpected command arguments. Run npx @doomerlabs/doomer --help.');
   switch (command) {
     case 'install':
