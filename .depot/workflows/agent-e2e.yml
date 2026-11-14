@@ -38,14 +38,14 @@ jobs:
         with:
           repository: doomerlabs/agent-e2e
           token: ${{ secrets.AGENT_E2E_READ_TOKEN }}
-          ref: 9346373f78dedffb9af7e83e28cba90c8ccb381b
+          ref: 3747751872516b6f10c22f2bf850bcf9fe138585
           path: e2e-runner
           persist-credentials: false
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: doomerlabs/doomer
           # Matching unreleased watch-agent CLI; validate before release.
-          ref: fb4eb9a311af290d6c4555701003e0c643d951c7
+          ref: 0c9ffcd6c590c9c9b421000c38018bf2434a0715
           path: candidate-cli
           persist-credentials: false
       - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c
