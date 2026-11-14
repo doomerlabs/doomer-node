@@ -41,7 +41,7 @@ try {
   assert.equal(result.capabilities.watchAgentHook, true);
   assert.equal(result.uploadApproved, false, 'rehearsal does not grant upload permission');
   const state = JSON.parse(await readFile(join(home, 'manager', 'state.json'), 'utf8'));
-  assert.equal(state.native.version, '2026.11.13.1-beta.2');
+  assert.equal(state.native.version, metadata.doomer.cliVersion);
   assert.match(await readFile(join(home, '.agents/skills/doomer/SKILL.md'), 'utf8'), /^name:\s*doomer\s*$/m);
   const hooks = JSON.parse(await readFile(join(home, '.codex/hooks.json'), 'utf8'));
   assert.ok(hooks.hooks.UserPromptSubmit.some(group => group.hooks.some(hook => hook.command.includes(' watch agent '))));

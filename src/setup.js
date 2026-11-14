@@ -9,6 +9,7 @@ import { paths, developmentInstall, metadata, packageRoot, hash, npm, run, readS
 import { resolveAPI } from './api.js';
 import { uploadPrompt, acceptsUploadAnswer } from './permissions.js';
 import { installNative, validateCLIVersion } from './native.js';
+import { configureReviewerPolicy } from './reviewer-policy.js';
 import { reloadCodexHooks } from './codex.js';
 import { inspectNativeInstallation } from './doctor.js';
 import { withSkillSource } from './skill-source.js';
@@ -188,6 +189,7 @@ export async function setup(options, { forceSkill = true } = {}) {
   validateCLIVersion(options['cli-version']);
   resolveAPI(options['api-url'], (await readState()).api);
   const selected = await selectAgents(options);
+  if (options['reviewer-policy'] && !selected.includes('codex')) throw new Error('--reviewer-policy requires selecting codex.');
   if (developmentInstall() && !process.env.DOOMER_NATIVE_BINARY) throw new Error('Development installation requires DOOMER_NATIVE_BINARY.');
   await rm(join(paths().home,'uninstalling.json'),{force:true});
   const retry = managerCommand('onboard', { agents: selected, api: options['api-url'], cliVersion: options['cli-version'] });
@@ -199,7 +201,9 @@ export async function setup(options, { forceSkill = true } = {}) {
   }
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
   await setupStep('Configuring agent hooks', retry, () => configure(selected, native.executable, options));
-  const result = { ...installed, ...native, agents: selected, ...(await doctor()) };
+  const codexReviewPolicy = selected.includes('codex')
+    ? await setupStep('Configuring Codex reviewer policy', retry, () => configureReviewerPolicy(native.executable, options, question)) : undefined;
+  const result = { ...installed, ...native, agents: selected, ...(await doctor({ policy: codexReviewPolicy })) };
   if(selected.includes('codex')) {
     result.codexReload=await reloadCodexHooks();
 
@@ -207,7 +211,7 @@ export async function setup(options, { forceSkill = true } = {}) {
   return result;
 }
 
-export async function doctor() {
+export async function doctor({ policy } = {}) {
   const state = await readState();
   const runtime = state.runtime;
   const cli = !!runtime && await exists(runtime);
@@ -220,6 +224,12 @@ export async function doctor() {
     executable: state.executable || null, skill: skill ? 'installed' : 'missing', hooks,
     uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })) };
   const api = resolveAPI(undefined, state.api);
+  // Doctor is read-only and does not verify an account over the network. Setup
+  // supplies its freshly verified proposal; standalone diagnostics stay explicit.
+  if (policy) result.codexReviewPolicy = policy;
+  else if (state.agents.includes('codex') && state.grants.some(g => g.api === api)) {
+    result.codexReviewPolicy = { policies: [], activation: 'unverified', error: 'Reviewer authorization has not been verified. Run onboard to inspect the current scoped policy.' };
+  }
   return { ...result, ...installationGuidance(result, { api, localNative: state.native?.source === 'local', uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === api) }) };
 }
 

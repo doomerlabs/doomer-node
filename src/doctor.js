@@ -96,6 +96,13 @@ export function formatSetup(result) {
       if (issue.instruction) lines.push(issue.instruction);
     }
   }
+  for (const policy of result.codexReviewPolicy?.policies || []) {
+    lines.push('', `Codex reviewer policy: ${policy.state}; activation ${policy.activation}.`);
+    if (policy.state !== 'configured' && policy.state !== 'declined') {
+      lines.push(policy.extra_policy, ...policy.changes,
+        `Review this proposal separately from upload consent. Rerun onboard with --reviewer-policy allow (or decline) --reviewer-policy-proposal ${policy.install_command?.[policy.install_command.indexOf('--proposal') + 1]}.`);
+    }
+  }
   if (result.agents.length) {
     lines.push('', 'Next: open /hooks in your agent to review and trust Doomer.');
     if (result.codexReload?.restartRequired) lines.push('Codex: start a new session to load the hooks.');

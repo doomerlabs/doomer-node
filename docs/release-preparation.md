@@ -11,7 +11,7 @@ held with `/doomer no-approve` until the user explicitly authorizes release work
 - The manager installs `@doomerlabs/doomer` and the native Go CLI separately.
 - The production skill source is the reviewed immutable commit in
   `src/skill-source.js`; it must exist and pass the onboarding rehearsal.
-- The initial public package is `0.0.1`; use a new stable SemVer for the next release. Confirm the selected version is still unused
+- Use a new SemVer for each release, including `-beta.N` for the beta channel. Confirm the selected version is still unused
   immediately before authorized publication; never overwrite a published version.
 - Pack with `npm pack --ignore-scripts` and inspect the actual tarball. Test that
   tarball in a disposable home before publishing. Record its integrity digest.
@@ -68,7 +68,8 @@ Codex/Claude session is still required to verify actual review delivery.
 - Rehearse the final package/archive combination before pushing a release tag.
   Use a new four-part Go CalVer (`YYYY.M.D.N`) for the actual release date.
 - Publish and verify the Go release first: GitHub assets, public downloads,
-  stable channel, signed managed catalog, and Homebrew formula. Preserve old
+  matching release channel and Homebrew formula; stable releases also update
+  the signed managed catalog. Preserve old
   managed catalog entries and the legacy bootstrap pin.
 - Publish the reviewed npm package only after the public Go channel supplies
   the compatible CLI. Verify registry integrity against the reviewed tarball and

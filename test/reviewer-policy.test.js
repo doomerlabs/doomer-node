@@ -1,0 +1,34 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { configureReviewerPolicy } from '../src/reviewer-policy.js';
+
+test('policy consent is separate, uses Go proposal commands, and preserves explicit declines', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'policy-'));
+  const previous = process.env.DOOMER_HOME;
+  process.env.DOOMER_HOME = home;
+  t.after(async () => { if (previous === undefined) delete process.env.DOOMER_HOME; else process.env.DOOMER_HOME = previous; await rm(home, {recursive:true,force:true}); });
+  await writeFile(join(home,'state.json'), JSON.stringify({api:'https://doomer.ai/api',grants:[{scope:'global',api:'https://doomer.ai/api'}]}));
+  let state = 'missing'; const calls=[];
+  const execute = async (exe,args) => {
+    calls.push(args);
+    if (args.includes('--decision')) state=args.at(-1)==='allow' ? 'configured' : 'declined';
+    return Buffer.from(JSON.stringify({policies:[{state,extra_policy:'exact scoped policy',changes:['preserve settings'],install_command:[process.execPath,'--proposal','scope-digest','--decision','allow'],decline_command:[process.execPath,'--proposal','scope-digest','--decision','decline']}],activation:'unverified'}));
+  };
+  const ask=()=>{throw new Error('noninteractive test must not prompt');};
+  let result=await configureReviewerPolicy(process.execPath,{'approve-uploads':true,'api-url':'https://doomer.ai/api'},ask,execute);
+  assert.equal(result.policies[0].state,'missing');
+  assert.equal(calls.some(args=>args.includes('--decision')),false);
+  await assert.rejects(configureReviewerPolicy(process.execPath,{'reviewer-policy':'allow','reviewer-policy-proposal':'stale','api-url':'https://doomer.ai/api'},ask,execute), /changed or has not been reviewed/);
+  result=await configureReviewerPolicy(process.execPath,{'reviewer-policy':'allow','reviewer-policy-proposal':'scope-digest','api-url':'https://doomer.ai/api'},ask,execute);
+  assert.equal(result.policies[0].state,'configured'); assert.equal(result.activation,'unverified');
+  state='missing';
+  await configureReviewerPolicy(process.execPath,{'reviewer-policy':'decline','reviewer-policy-proposal':'scope-digest','api-url':'https://doomer.ai/api'},ask,execute);
+  const count=calls.filter(args=>args.includes('--decision')).length;
+  await configureReviewerPolicy(process.execPath,{'reviewer-policy':'allow','reviewer-policy-proposal':'scope-digest','api-url':'https://doomer.ai/api'},ask,execute);
+  assert.equal(calls.filter(args=>args.includes('--decision')).length,count);
+  await writeFile(join(home,'state.json'), JSON.stringify({grants:[]}));
+  await assert.rejects(configureReviewerPolicy(process.execPath,{'reviewer-policy':'allow','api-url':'https://doomer.ai/api'},ask,execute), /no decision was applied/);
+});

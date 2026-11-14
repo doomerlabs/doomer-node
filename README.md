@@ -275,6 +275,28 @@ npx @doomerlabs/doomer@beta install
 ```
 
 The npm installer version and Go CLI version are independent. This beta
-installer pins Go CLI `2026.11.13.1-beta.2` by default, so no CLI version flag is
+installer pins Go CLI `2026.11.14.1-beta.1` by default, so no CLI version flag is
 needed. Reinstalling or updating this package retains its tested Go CLI version.
 Explicit local development binaries continue to override the published default.
+
+### Codex reviewer authorization
+
+Codex setup separately proposes a reviewer policy for the verified Doomer account,
+API, credential directory/profile, and saved repository scope. Upload approval and
+native hook trust do not authorize this settings change. `install` and `onboard`
+return `codexReviewPolicy` with the full proposal and its install/decline commands.
+Interactive setup asks before applying it. For noninteractive setup, review that
+proposal, then rerun the following command using its exact digest:
+
+```sh
+npx @doomerlabs/doomer onboard --agent codex --reviewer-policy allow --reviewer-policy-proposal DIGEST
+```
+
+Use `decline` to save an explicit refusal; an unanswered proposal stays pending. Existing upload approval
+is reused during recovery. Unrelated policies and settings are preserved.
+
+`doctor --json` reports reviewer authorization as unverified and directs recovery
+through `onboard` without making account-verification network calls. Configured
+policy and a successful configuration reload still leave activation unverified: verify an
+ordinary Doomer results/finding operation in the actual running Codex session.
+A pending-policy proposal never grants permission to bypass an approval denial.
