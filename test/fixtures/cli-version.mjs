@@ -3,7 +3,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { installNative, upgradeNative } from '../../src/native.js';
-import { hash, readState } from '../../src/system.js';
+import { hash, readState, metadata } from '../../src/system.js';
 import { managerCommand } from '../../src/recovery.js';
 
 await mkdir(process.env.DOOMER_BIN_DIR, { recursive: true });
@@ -27,6 +27,14 @@ globalThis.fetch = async address => {
   assert.equal(address, `https://downloads.doomer.ai/cli/releases/${version}/doomer_${version}_${platform}.tar.gz`);
   return new Response(archive);
 };
+const automatic = await installNative();
+assert.equal(automatic.version, metadata.doomer.cliVersion);
+assert.equal(automatic.source, 'package-pinned');
+await installNative();
+assert.equal(requests.length, 2, 'default beta pin reuses the verified executable');
+await installNative({ update: true });
+assert.equal(requests.length, 4, 'package updates retain the tested default pin');
+requests.length = 0;
 const version = '2026.11.3-beta.1';
 const installed = await installNative({ version });
 assert.equal(installed.version, version);
@@ -42,13 +50,13 @@ const before = await readState();
 const bytes = await readFile(installed.executable);
 for (const [mode, pattern] of [['missing', /HTTP 404/], ['manifest', /No valid native CLI release/], ['checksum', /checksum mismatch/]]) {
   failure = mode;
-  await assert.rejects(installNative({ version: '2026.11.13.1-beta.2' }), pattern);
+  await assert.rejects(installNative({ version: '2026.11.12.1-beta.9' }), pattern);
   assert.deepEqual(await readState(), before);
   assert.deepEqual(await readFile(installed.executable), bytes);
 }
 failure = undefined;
 reportedVersion = '2026.11.13.1-beta.20';
-await assert.rejects(installNative({ version: '2026.11.13.1-beta.2' }), /version does not match/);
+await assert.rejects(installNative({ version: '2026.11.12.1-beta.9' }), /version does not match/);
 assert.deepEqual(await readState(), before);
 assert.deepEqual(await readFile(installed.executable), bytes);
 reportedVersion = undefined;

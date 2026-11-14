@@ -14,6 +14,7 @@ const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export function validateMetadata(pkg, lock, tag) {
   if (pkg.name !== '@doomerlabs/doomer' || !versionPattern.test(pkg.version)) throw new Error('Expected @doomerlabs/doomer with a three-part SemVer version or -beta.N prerelease.');
+  if (pkg.version.includes('-beta.') && !/^20\d{2}\.\d{1,2}\.\d{1,2}\.\d+-beta\.\d+$/.test(pkg.doomer?.cliVersion || '')) throw new Error('Beta installer must pin its tested Go CLI beta version.');
   if (lock.name !== pkg.name || lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version || lock.packages?.['']?.name !== pkg.name) throw new Error('package.json and package-lock.json must agree.');
   if (tag !== undefined && tag !== pkg.version) throw new Error('Release tag must be the exact package version.');
   return { name: pkg.name, version: pkg.version };

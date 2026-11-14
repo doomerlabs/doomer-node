@@ -34,5 +34,8 @@
   },
   "dependencies": {
     "ws": "^8.22.2"
+  },
+  "doomer": {
+    "cliVersion": "2026.11.13.1-beta.2"
   }
 }

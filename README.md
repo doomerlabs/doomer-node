@@ -271,8 +271,10 @@ Published versions are immutable; retries verify the existing bytes.
 To test the beta installer with the matching Go CLI beta:
 
 ```sh
-npx @doomerlabs/doomer@beta install --cli-version 2026.11.13.1-beta.2
+npx @doomerlabs/doomer@beta install
 ```
 
-The npm installer version and Go CLI version are independent. Choosing the npm
-beta channel does not implicitly switch the Go CLI release channel.
+The npm installer version and Go CLI version are independent. This beta
+installer pins Go CLI `2026.11.13.1-beta.2` by default, so no CLI version flag is
+needed. Reinstalling or updating this package retains its tested Go CLI version.
+Explicit local development binaries continue to override the published default.

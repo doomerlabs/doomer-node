@@ -222,11 +222,13 @@ export async function doctor() {
 }
 
 export async function update(options) {
-  const raw = await npm(['view', metadata.name, 'version', '--json']);
+  const channel = metadata.version.includes('-beta.') ? 'beta' : 'latest';
+  const raw = await npm(['view', `${metadata.name}@${channel}`, 'version', '--json']);
   const version = JSON.parse(raw.toString());
   if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) throw new Error('Invalid published version.');
   const result = await installCLI({ version });
-  const native = await installNative({ update:true });
+  const packageMetadata = JSON.parse(await readFile(join(dirname(result.runtime), '..', 'package.json'), 'utf8'));
+  const native = await installNative({ update:true, packageMetadata });
   const selected = (await readState()).agents;
   await installSkill(selected);
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command.');

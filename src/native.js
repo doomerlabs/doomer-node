@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile, lstat, symlink, rename, rm } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { nativePath, developmentInstall, otherState, hash, run, readState, changeState, atomicWrite, exists } from './system.js';
+import { nativePath, metadata, developmentInstall, otherState, hash, run, readState, changeState, atomicWrite, exists } from './system.js';
 
 const RELEASES = 'https://downloads.doomer.ai/cli/';
 
@@ -96,7 +96,7 @@ export function validateCLIVersion(version) {
   if (process.env.DOOMER_NATIVE_BINARY || developmentInstall()) throw new Error('--cli-version cannot be combined with a local development CLI.');
 }
 
-export async function installNative({ update = false, version } = {}) {
+export async function installNative({ update = false, version, packageMetadata = metadata } = {}) {
   validateCLIVersion(version);
   const state = await readState();
   if (developmentInstall() && !process.env.DOOMER_NATIVE_BINARY) throw new Error('Development installation requires DOOMER_NATIVE_BINARY pointing to your locally built Go CLI.');
@@ -106,16 +106,18 @@ export async function installNative({ update = false, version } = {}) {
     return installVersion(await readFile(source), version, 'local');
   }
   const installed = state.native;
-  const selectedVersion = version ?? (installed?.source === 'pinned' ? installed.version : undefined);
+  const packagePin = packageMetadata.version.includes('-beta.') ? packageMetadata.doomer?.cliVersion : undefined;
+  if (packageMetadata.version.includes('-beta.') && !packagePin) throw new Error('Beta installer is missing its tested Go CLI version.');
+  const selectedVersion = version ?? (installed?.source === 'pinned' ? installed.version : undefined) ?? packagePin;
   validateCLIVersion(selectedVersion);
-  if (!update && (!selectedVersion || (installed?.source === 'pinned' && installed.version === selectedVersion)) && installed?.path && dirname(installed.path) === dirname(nativePath()) && state.binaries?.[installed.path] && await exists(installed.path)) {
+  if (!update && (!selectedVersion || (['pinned', 'package-pinned'].includes(installed?.source) && installed.version === selectedVersion)) && installed?.path && dirname(installed.path) === dirname(nativePath()) && state.binaries?.[installed.path] && await exists(installed.path)) {
     if (!(await lstat(installed.path)).isFile() || hash(await readFile(installed.path)) !== installed.sha256) throw new Error('Installed native CLI has changed. Reinstall with DOOMER_NATIVE_BINARY or update.');
     return activateNative({ ...installed, watch: await supportsWatch(installed.path) });
   }
   const { manifest, asset } = selectedVersion ? await pinnedRelease(selectedVersion) : await stableRelease();
   const archive = await download(asset.url, 64 * 1024 * 1024);
   if (hash(archive) !== asset.sha256) throw new Error('Native release checksum mismatch.');
-  return installVersion(archiveBinary(archive), manifest.version, selectedVersion ? 'pinned' : 'stable');
+  return installVersion(archiveBinary(archive), manifest.version, selectedVersion ? (version || installed?.source === 'pinned' ? 'pinned' : 'package-pinned') : 'stable');
 }
 
 async function pinnedRelease(version) {
@@ -142,6 +144,7 @@ async function stableRelease() {
 export async function upgradeNative({ check = false } = {}) {
   const state = await readState();
   const current = state.native;
+  if (current?.source === 'package-pinned') throw new Error('This CLI is pinned to the installer beta. Run npx @doomerlabs/doomer@beta update for the next tested beta.');
   if (current?.source === 'pinned') throw new Error('This CLI is pinned. Run install --cli-version VERSION to select another release.');
   if (!current || current.source !== 'stable' || developmentInstall() || process.env.DOOMER_NATIVE_BINARY) {
     throw new Error('CLI-only upgrade requires a released Node-managed installation; development binaries remain user-built.');

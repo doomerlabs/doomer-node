@@ -93,9 +93,10 @@ test('initial release adoption preserves immutable bytes and runtime files, allo
 
 
 test('beta releases use the beta channel and enforce exact prerelease metadata', () => {
-  const pkg = { name: '@doomerlabs/doomer', version: '0.1.0-beta.1' };
+  const pkg = { name: '@doomerlabs/doomer', version: '0.1.0-beta.1', doomer: { cliVersion: '2026.11.13.1-beta.2' } };
   const lock = { ...pkg, packages: { '': pkg } };
-  assert.deepEqual(validateMetadata(pkg, lock, pkg.version), pkg);
+  assert.deepEqual(validateMetadata(pkg, lock, pkg.version), { name: pkg.name, version: pkg.version });
+  assert.throws(() => validateMetadata({ ...pkg, doomer: undefined }, lock, pkg.version), /must pin/);
   assert.equal(releaseChannel(pkg.version), 'beta');
   assert.equal(releaseChannel('0.1.0'), 'latest');
   for (const version of ['0.1.0-beta.01', '0.1.0-rc.1', 'v0.1.0', '0.1.0;echo bad']) {

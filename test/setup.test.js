@@ -78,6 +78,8 @@ else process.exit(1);
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
   assert.equal(JSON.parse(await readFile(join(codex, 'hooks.json'))).permissions, 'preserve');
   await cli(['update']);
+  const updateCalls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.ok(updateCalls.some(args => args[0] === 'view' && args[1] === '@doomerlabs/doomer@beta'));
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
   // Legacy environment overrides cannot restore obsolete global scope.
   env.DOOMER_HOOK_ROOT = join(home, 'ignored-legacy-root');
