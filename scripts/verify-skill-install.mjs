@@ -20,6 +20,11 @@ try {
   const evidence = process.argv[2]
     ? JSON.parse(await readFile(join(artifactDirectory, 'evidence.json'), 'utf8'))
     : (await pack(artifactDirectory)).evidence;
+  const metadata = JSON.parse(await readFile(resolve('package.json'), 'utf8'));
+  assert.equal(evidence.name, metadata.name, 'artifact package must match this checkout');
+  assert.equal(evidence.version, metadata.version, 'artifact version must match this checkout');
+  const { stdout: commit } = await exec('git', ['rev-parse', 'HEAD']);
+  assert.equal(evidence.commit, commit.trim(), 'artifact commit must match this checkout');
   const tarball = join(artifactDirectory, `doomerlabs-doomer-${evidence.version}.tgz`);
   const actualIntegrity = 'sha512-' + createHash('sha512').update(await readFile(tarball)).digest('base64');
   assert.equal(actualIntegrity, evidence.integrity, 'rehearse exactly the recorded npm artifact');

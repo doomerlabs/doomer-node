@@ -1,6 +1,7 @@
+import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -110,4 +111,20 @@ test('beta releases use the beta channel and enforce exact prerelease metadata',
   const betaChecks = checks();
   betaChecks[0].output.summary = `<!-- doomer-npm-package-v1\n${JSON.stringify(beta)}\n-->`;
   assert.deepEqual(completedEvidence(betaChecks, sha), beta);
+});
+
+
+test('packed install rehearsal rejects another version or commit before installing', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'stale-rehearsal-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const metadata = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  for (const [patch, message] of [
+    [{ version: '0.0.0' }, /artifact version must match this checkout/],
+    [{ commit: '0'.repeat(40) }, /artifact commit must match this checkout/],
+  ]) {
+    await writeFile(join(directory, 'evidence.json'), JSON.stringify({ name: metadata.name, version: metadata.version, commit, ...patch }));
+    assert.throws(() => execFileSync(process.execPath, ['scripts/verify-skill-install.mjs', directory], { stdio: 'pipe' }),
+      error => message.test(error.stderr.toString()));
+  }
 });
