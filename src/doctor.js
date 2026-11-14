@@ -55,6 +55,7 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
     rows.push(`  ${paint(symbol, code)} ${label.padEnd(12)} ${value}`);
   };
   row('Manager', `${metadata.version}${result.cli ? '' : ' — installation missing'}`, result.cli ? 'ok' : 'error');
+  if (result.api) row('Service', `${result.api} (${result.apiSource}${result.apiConfigFile ? `: ${result.apiConfigFile}` : ''})`);
   row('Go CLI', result.nativeStatus === 'available' ? result.nativeVersion : result.nativeStatus === 'missing' ? 'Missing' : 'Present, but could not run as Doomer', result.nativeStatus === 'available' ? 'ok' : 'error');
   if (result.nativeStatus === 'available' && result.nativeVersion !== result.recordedNativeVersion) {
     rows.push(`                 ${paint('Binary updated since installation', '2')}`);

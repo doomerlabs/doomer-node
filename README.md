@@ -105,6 +105,13 @@ Use `doomer review --help` for review options, upload permission, and result han
 
 Run `npx @doomerlabs/doomer doctor` for a readable diagnosis. `--json` includes structured `issues`, `next`, `uploadApproved` and `activation`. `ready` means installed configuration; it does not prove hook trust, upload consent or a completed review.
 
+Doctor checks upload approval for the service the watcher would use in the current
+directory: `--api-url`, the nearest `.doomer.env`, `DOOMER_API_URL`, the saved
+service, then the default. It prints the selected service and its source;
+JSON includes `api`, `apiSource`, and `apiConfigFile` for a directory setting.
+Directory settings are read as literal data without executing `.envrc` or
+printing credentials. A nearer `.doomer.env` replaces farther ancestor settings.
+
 Missing CLI or skill: rerun `onboard`. Missing hooks: run `install-hooks --agent codex` (or `claude`). Disabled hooks or invalid settings: follow the reported settings-file action; repair preserves those user choices. PATH conflicts: use the reported absolute executable or fix PATH instead of reinstalling. Missing upload approval: rerun `onboard` and review the consent prompt. Setup errors name the failed step and provide a command to resume after fixing it.
 
 For an expired account login, use `doomer login --device` for the same service and profile. For unavailable or rate-limited service, retain any review ID and retry later. Never report a failed request as a completed review. `doomer support bundle` saves local diagnostics; `--upload` explicitly shares them.
