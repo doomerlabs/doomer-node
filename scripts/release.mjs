@@ -7,13 +7,14 @@ import { gunzipSync } from 'node:zlib';
 
 const repository = 'doomerlabs/doomer-node';
 const marker = 'doomer-npm-package-v1';
-const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-beta\.(0|[1-9]\d*))?$/;
 const integrity = bytes => `sha512-${createHash('sha512').update(bytes).digest('base64')}`;
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export function validateMetadata(pkg, lock, tag) {
-  if (pkg.name !== '@doomerlabs/doomer' || !versionPattern.test(pkg.version)) throw new Error('Expected @doomerlabs/doomer with a stable three-part SemVer version.');
+  if (pkg.name !== '@doomerlabs/doomer' || !versionPattern.test(pkg.version)) throw new Error('Expected @doomerlabs/doomer with a three-part SemVer version or -beta.N prerelease.');
+  if (pkg.version.includes('-beta.') && !/^20\d{2}\.\d{1,2}\.\d{1,2}\.\d+-beta\.\d+$/.test(pkg.doomer?.cliVersion || '')) throw new Error('Beta installer must pin its tested Go CLI beta version.');
   if (lock.name !== pkg.name || lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version || lock.packages?.['']?.name !== pkg.name) throw new Error('package.json and package-lock.json must agree.');
   if (tag !== undefined && tag !== pkg.version) throw new Error('Release tag must be the exact package version.');
   return { name: pkg.name, version: pkg.version };
@@ -34,13 +35,28 @@ export function completedEvidence(checks, sha) {
   return evidence;
 }
 
-export function checkPublished(expected, published, latest) {
+export function releaseChannel(version) {
+  if (!versionPattern.test(version)) throw new Error('Invalid release version.');
+  return version.includes('-beta.') ? 'beta' : 'latest';
+}
+
+function compareVersions(left, right) {
+  const a = versionPattern.exec(left), b = versionPattern.exec(right);
+  for (let i = 1; i <= 3; i++) {
+    if (BigInt(a[i]) !== BigInt(b[i])) return BigInt(a[i]) > BigInt(b[i]) ? 1 : -1;
+  }
+  if (a[4] === b[4]) return 0;
+  if (a[4] === undefined) return 1;
+  if (b[4] === undefined) return -1;
+  return BigInt(a[4]) > BigInt(b[4]) ? 1 : -1;
+}
+
+export function checkPublished(expected, published, currentChannel) {
+  const channel = releaseChannel(expected.version);
   if (published && published.dist?.integrity !== expected.integrity) throw new Error('This npm version already exists with different bytes; never reuse or overwrite it.');
   if (published) return false;
-  if (latest && versionPattern.test(latest.version)) {
-    const a = latest.version.split('.').map(Number), b = expected.version.split('.').map(Number);
-    const i = a.findIndex((n, index) => n !== b[index]);
-    if (i >= 0 && a[i] > b[i]) throw new Error('Refusing to move latest backwards.');
+  if (currentChannel && versionPattern.test(currentChannel.version) && compareVersions(currentChannel.version, expected.version) > 0) {
+    throw new Error(`Refusing to move ${channel} backwards.`);
   }
   return true;
 }
@@ -167,10 +183,11 @@ async function main() {
         publication = { ...evidence, integrity: receipt.integrity, originalSourceCommit: receipt.sourceCommit, publication: 'manual, verified by CI' };
         console.log('Verified the immutable manually published 0.0.1; no npm upload will be performed.');
       }
-      const publish = checkPublished(publication, published, await registry('latest'));
+      const channel = releaseChannel(publication.version);
+      const publish = checkPublished(publication, published, await registry(channel));
       await writeFile(join(directory, 'publication.json'), JSON.stringify(publication, null, 2) + '\n');
       if (!process.env.GITHUB_OUTPUT) throw new Error('Missing GitHub step outputs.');
-      await appendFile(process.env.GITHUB_OUTPUT, `tarball=${tarball}\npublish=${publish}\n`);
+      await appendFile(process.env.GITHUB_OUTPUT, `tarball=${tarball}\npublish=${publish}\nchannel=${channel}\n`);
     }
     console.log(`Verified ${evidence.name}@${evidence.version}: ${evidence.integrity}`); return;
   }

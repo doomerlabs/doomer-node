@@ -3,17 +3,24 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { installNative, upgradeNative } from '../../src/native.js';
-import { hash, readState } from '../../src/system.js';
+import { hash, readState, metadata } from '../../src/system.js';
 import { managerCommand } from '../../src/recovery.js';
 
 await mkdir(process.env.DOOMER_BIN_DIR, { recursive: true });
 const platform = `${process.platform}_${{ x64: 'amd64', arm64: 'arm64' }[process.arch]}`;
 const requests = [];
 let failure;
+let allowStable = false;
 let reportedVersion;
+const stableBinary=Buffer.from(`#!${process.execPath}\nconsole.log(process.argv.includes('--version') ? 'doomer 2026.11.10.3' : 'Watch recursively and review settled changes until stopped --manager-home --agent');\n`);
+const stableHeader=Buffer.alloc(512);stableHeader.write('doomer');stableHeader.write(stableBinary.length.toString(8).padStart(11,'0')+'\0',124);stableHeader[156]=48;
+const stableDigest=hash(gzipSync(Buffer.concat([stableHeader,stableBinary,Buffer.alloc((512-stableBinary.length%512)%512),Buffer.alloc(1024)])));
 globalThis.fetch = async address => {
   requests.push(address);
-  assert.ok(!address.endsWith('stable.json'), 'pinned installations must never fall back to stable');
+  if (address.endsWith('stable.json')) {
+    assert.ok(allowStable, 'pinned installations must never fall back to stable');
+    return new Response(JSON.stringify({schema_version:1,version:'2026.11.10.3',assets:{[platform]:{url:`https://downloads.doomer.ai/cli/releases/2026.11.10.3/doomer_2026.11.10.3_${platform}.tar.gz`,sha256:stableDigest}}}));
+  }
   const version = address.split('/releases/')[1].split('/')[0];
   if (failure === 'missing') return new Response('', { status: 404 });
   const binary = Buffer.from(`#!${process.execPath}\nconsole.log(process.argv.includes('--version') ? 'doomer ${reportedVersion || version}' : 'Watch recursively and review settled changes until stopped --manager-home --agent');\n`);
@@ -27,6 +34,20 @@ globalThis.fetch = async address => {
   assert.equal(address, `https://downloads.doomer.ai/cli/releases/${version}/doomer_${version}_${platform}.tar.gz`);
   return new Response(archive);
 };
+const automatic = await installNative();
+assert.equal(automatic.version, metadata.doomer.cliVersion);
+assert.equal(automatic.source, 'package-pinned');
+await installNative();
+assert.equal(requests.length, 2, 'default beta pin reuses the verified executable');
+await installNative({ update: true });
+assert.equal(requests.length, 4, 'package updates retain the tested default pin');
+allowStable = true;
+const stable = await installNative({packageMetadata:{version:'0.1.0'}});
+assert.equal(stable.source,'stable');
+assert.equal(stable.version,'2026.11.10.3');
+allowStable = false;
+await installNative();
+requests.length = 0;
 const version = '2026.11.3-beta.1';
 const installed = await installNative({ version });
 assert.equal(installed.version, version);
@@ -42,13 +63,13 @@ const before = await readState();
 const bytes = await readFile(installed.executable);
 for (const [mode, pattern] of [['missing', /HTTP 404/], ['manifest', /No valid native CLI release/], ['checksum', /checksum mismatch/]]) {
   failure = mode;
-  await assert.rejects(installNative({ version: '2026.11.13.1-beta.2' }), pattern);
+  await assert.rejects(installNative({ version: '2026.11.12.1-beta.9' }), pattern);
   assert.deepEqual(await readState(), before);
   assert.deepEqual(await readFile(installed.executable), bytes);
 }
 failure = undefined;
 reportedVersion = '2026.11.13.1-beta.20';
-await assert.rejects(installNative({ version: '2026.11.13.1-beta.2' }), /version does not match/);
+await assert.rejects(installNative({ version: '2026.11.12.1-beta.9' }), /version does not match/);
 assert.deepEqual(await readState(), before);
 assert.deepEqual(await readFile(installed.executable), bytes);
 reportedVersion = undefined;

@@ -39,6 +39,7 @@ jobs:
         if: steps.package.outputs.publish == 'true'
         env:
           PACKAGE_PATH: ${{ steps.package.outputs.tarball }}
-        run: npm publish "$PACKAGE_PATH" --ignore-scripts --access public --tag latest
+          NPM_CHANNEL: ${{ steps.package.outputs.channel }}
+        run: npm publish "$PACKAGE_PATH" --ignore-scripts --access public --tag "$NPM_CHANNEL"
       - name: Verify published bytes
         run: node scripts/release.mjs verify "$RUNNER_TEMP/npm-release"

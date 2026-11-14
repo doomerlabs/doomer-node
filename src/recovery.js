@@ -1,9 +1,10 @@
-import { developmentInstall, paths } from './system.js';
+import { developmentInstall, paths, metadata } from './system.js';
 
 export const shellQuote = value => /^[a-zA-Z0-9_./:@,=-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
 
-export function managerCommand(command, { agents = [], api, cliVersion } = {}) {
-  const args = ['npx', '@doomerlabs/doomer', command, '--home', paths().home];
+export function managerCommand(command, { agents = [], api, cliVersion, channel = metadata.version.includes('-beta.') ? 'beta' : 'latest' } = {}) {
+  if (!['latest', 'beta'].includes(channel)) throw new Error('Invalid installer channel.');
+  const args = ['npx', channel === 'beta' ? '@doomerlabs/doomer@beta' : '@doomerlabs/doomer', command, '--home', paths().home];
   if (agents.length) args.push('--agent', agents.join(','));
   if (cliVersion) args.push('--cli-version', cliVersion);
   if (api) args.push('--api-url', api);

@@ -1,11 +1,11 @@
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
-import { join, resolve, dirname, delimiter, isAbsolute } from 'node:path';
-import { mkdir, mkdtemp, rm, lstat, stat, access, readFile, readdir, realpath } from 'node:fs/promises';
+import { join, resolve, dirname, delimiter } from 'node:path';
+import { mkdir, mkdtemp, rm, lstat, stat, access, readFile, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { agents, hookFile, installHooks, checkHooks, globalSkillPaths } from './hooks.js';
-import { paths, developmentInstall, selectedHookRoot, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
+import { paths, developmentInstall, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked } from './system.js';
 import { resolveAPI } from './api.js';
 import { uploadPrompt, acceptsUploadAnswer } from './permissions.js';
 import { installNative, validateCLIVersion } from './native.js';
@@ -142,9 +142,6 @@ export async function skillPresent(selected = []) {
 
 export async function configure(selected, runtime, options) {
   const installed = [];
-  if (Object.hasOwn(process.env, 'DOOMER_HOOK_ROOT')) {
-    await changeState(s => { if (process.env.DOOMER_HOOK_ROOT) s.hookRoot = process.env.DOOMER_HOOK_ROOT; else delete s.hookRoot; });
-  }
   for (const agent of selected) installed.push(await installHooks(agent, runtime));
   await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; s.api = resolveAPI(options['api-url'], s.api); });
   if (options['approve-uploads']) {
@@ -190,12 +187,6 @@ export async function setup(options, { forceSkill = true } = {}) {
   resolveAPI(options['api-url'], (await readState()).api);
   const selected = await selectAgents(options);
   if (developmentInstall() && !process.env.DOOMER_NATIVE_BINARY) throw new Error('Development installation requires DOOMER_NATIVE_BINARY.');
-  const hookRoot = selectedHookRoot(await readState());
-  if (developmentInstall() && selected.length && !hookRoot) throw new Error('Development hooks require DOOMER_HOOK_ROOT pointing to your test-apps directory.');
-  if (hookRoot && selected.length) {
-    if (!isAbsolute(hookRoot) || !(await stat(hookRoot).catch(() => null))?.isDirectory()) throw new Error('DOOMER_HOOK_ROOT must be an existing absolute directory. Set DOOMER_HOOK_ROOT to a new directory, or to an empty value to clear the saved scope.');
-    if (process.env.DOOMER_HOOK_ROOT) process.env.DOOMER_HOOK_ROOT = await realpath(hookRoot);
-  }
   await rm(join(paths().home,'uninstalling.json'),{force:true});
   const retry = managerCommand('onboard', { agents: selected, api: options['api-url'], cliVersion: options['cli-version'] });
   const installed = await setupStep('Installing the manager', retry, () => installCLI({ from: options.from }));
@@ -231,11 +222,13 @@ export async function doctor() {
 }
 
 export async function update(options) {
-  const raw = await npm(['view', metadata.name, 'version', '--json']);
+  const channel = metadata.version.includes('-beta.') ? 'beta' : 'latest';
+  const raw = await npm(['view', `${metadata.name}@${channel}`, 'version', '--json']);
   const version = JSON.parse(raw.toString());
   if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) throw new Error('Invalid published version.');
   const result = await installCLI({ version });
-  const native = await installNative({ update:true });
+  const packageMetadata = JSON.parse(await readFile(join(dirname(result.runtime), '..', 'package.json'), 'utf8'));
+  const native = await installNative({ update:true, packageMetadata });
   const selected = (await readState()).agents;
   await installSkill(selected);
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command.');

@@ -77,14 +77,17 @@ else process.exit(1);
   await cli(['install-hooks', '--agent', 'codex']);
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
   assert.equal(JSON.parse(await readFile(join(codex, 'hooks.json'))).permissions, 'preserve');
+  const callsBeforeUpdate = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').length;
   await cli(['update']);
+  const updateCalls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').slice(callsBeforeUpdate).map(JSON.parse);
+  assert.ok(updateCalls.some(args => args[0] === 'view' && args[1] === '@doomerlabs/doomer@beta'));
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
-  // An explicitly empty override clears stale persisted scope without manual
-  // state editing or probing the old native binary before reinstalling it.
+  // Legacy environment overrides cannot restore obsolete global scope.
+  env.DOOMER_HOOK_ROOT = join(home, 'ignored-legacy-root');
+  // Reinstall removes obsolete global scope; hooks use each session cwd.
   const stale = JSON.parse(await readFile(join(home, 'state', 'state.json')));
   stale.hookRoot = join(home, 'deleted-scope');
   await writeFile(join(home, 'state', 'state.json'), JSON.stringify(stale));
-  env.DOOMER_HOOK_ROOT = '';
   await cli(['install-hooks', '--agent', 'codex']);
   assert.equal(JSON.parse(await readFile(join(home, 'state', 'state.json'))).hookRoot, undefined);
   assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
@@ -93,4 +96,5 @@ else process.exit(1);
   assert.equal(JSON.parse(await readFile(join(home, 'state', 'state.json'))).hookRoot, undefined);
   const updatedHooks = JSON.parse(await readFile(join(codex, 'hooks.json')));
   assert.equal(updatedHooks.hooks.Stop[0].hooks[0].command, hooks.hooks.Stop[1].hooks[0].command, 'updates retain the stable hook command');
+  assert.ok(!JSON.stringify(updatedHooks).includes(env.DOOMER_HOOK_ROOT));
 });

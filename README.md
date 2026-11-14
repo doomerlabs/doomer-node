@@ -49,7 +49,7 @@ production `doomer` is preserved. These profiles cannot both own the same local
 build: keep production on a released binary before adding development mode.
 
 Automatic reviews require a Go CLI with the foreground `watch` command and
-`watch agent-hook`. An older release may support manual reviews while doctor
+`watch agent`. An older release may support manual reviews while doctor
 reports automatic reviews unavailable. Use a compatible released CLI, or an
 explicitly selected candidate for authorized source testing.
 
@@ -122,7 +122,7 @@ npx @doomerlabs/doomer revoke
 Hooks use global Claude `settings.json` and Codex `hooks.json`, respecting
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. They call the persistent CLI by absolute
 path, independent of `PATH` and skill discovery. They execute the Go binary
-directly using `watch agent-hook`; Node is only used for management commands.
+directly using `watch agent`; Node is only used for management commands.
 The Go hook reads saved upload approvals. It uses `DOOMER_API_URL` and
 `DOOMER_TOKEN` from the agent environment when set, and reads the account
 credentials from the service-specific configuration directory saved during onboarding:
@@ -223,7 +223,6 @@ only in the local Node checkout's shell environment:
 ```sh
 export DOOMER_DEV_INSTALL=1
 export DOOMER_NATIVE_BINARY="$HOME/workspace/doomer/bin/doomer"
-export DOOMER_HOOK_ROOT="$HOME/test-apps"
 export DOOMER_API_URL=http://localhost:3000/api
 export DOOMER_CONFIG_DIR="$HOME/.doomer-developer/doomer-testing"
 unset DOOMER_TOKEN
@@ -237,22 +236,45 @@ positions so Codex trust keys do not alternate. Uninstalling development keeps
 the shared skill used by production. Uninstalling production also preserves
 the shared skill while a development installation remains.
 
-The development hooks require the Go CLI's `--watch-root` support. That Go patch
-is currently paused and uncommitted, so this scoped setup is not yet available
-from the published branch. The instructions below apply once that dependency
-is committed and you build it yourself. Provision production hooks with
-`DOOMER_HOOK_ROOT="$HOME/workspace"` and development mode unset, so the two hook
-sets watch disjoint directory trees. Both sets call Go directly. A chat rooted
-above both trees starts one scoped watcher for each tree. New or changed hook
-definitions still require native trust once; environment switching does not
-rewrite them.
+Both profiles use fixed hook commands and watch the working directory supplied by
+the agent. Open a common parent directory to watch multiple repositories beneath
+it. There is no saved global workspace root. To add another repository to an
+active request, use the control key supplied by that request's hook:
 
-To replace a saved production hook scope, set `DOOMER_HOOK_ROOT` to the new
-directory and rerun onboarding. Set `DOOMER_HOOK_ROOT=` to clear it. Development
-hooks still require a scope; `--no-hooks` can install without one.
+```sh
+doomer watch add /absolute/path/to/another-repo --control CONTROL_KEY
+```
+
+Run this before editing that repository and wait for success. Registration
+establishes a baseline without uploading or starting a review. Repeating it
+preserves pending changes. It affects only the selected running watcher; the
+next request establishes its own watcher and scope. Upload permission is still
+required. Production and development profiles remain separately installed, but
+do not use them simultaneously on the same project unless you want both to
+review its changes. New or changed hook definitions require native trust.
 
 `doomer upgrade` delegates a Node-managed CLI to this manager's `upgrade` command.
 Unlike `update`, `upgrade` changes only the native executable: it does not install
 skills, change agent selection, rewrite hooks, or grant upload permission. Use
 `upgrade --check --json` to inspect the latest release without writing local state.
 Development/local candidate binaries remain user-managed.
+
+
+## npm release channels
+
+Stable three-part tags such as `0.1.0` publish to npm's `latest` channel.
+Prerelease tags such as `0.1.0-beta.1` publish to `beta` without moving `latest`.
+The Git tag must exactly match package.json and package-lock.json. GitHub Actions
+publishes the exact package verified by Depot's package and real-agent checks.
+Published versions are immutable; retries verify the existing bytes.
+
+To test the beta installer with the matching Go CLI beta:
+
+```sh
+npx @doomerlabs/doomer@beta install
+```
+
+The npm installer version and Go CLI version are independent. This beta
+installer pins Go CLI `2026.11.13.1-beta.2` by default, so no CLI version flag is
+needed. Reinstalling or updating this package retains its tested Go CLI version.
+Explicit local development binaries continue to override the published default.

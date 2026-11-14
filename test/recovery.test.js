@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { installationGuidance, setupStep, shellQuote } from '../src/recovery.js';
+import { installationGuidance, setupStep, shellQuote, managerCommand } from '../src/recovery.js';
 import { formatSetup, formatDoctor } from '../src/doctor.js';
 
 const installed = () => ({ cli: true, ready: true, nativeStatus: 'available', commandInstalled: true, skill: 'installed', automaticReviews: true, onPath: true, globalCommand: '/tmp/bin/doomer', executable: '/tmp/bin/doomer', agents: ['codex'], hooks: [{ agent: 'codex', file: '/tmp/hooks.json', configured: true, enabled: true }] });
@@ -67,7 +67,7 @@ test('incompatible local binaries stay user-managed instead of looping through u
   assert.match(local.instruction, /DOOMER_NATIVE_BINARY/);
   assert.match(local.instruction, /onboard/);
   const release = installationGuidance(state, { uploadApproved: true, localNative: false }).issues[0];
-  assert.match(release.command, /doomer update/);
+  assert.match(release.command, /doomer@beta update/);
 });
 
 
@@ -76,7 +76,7 @@ test('standalone setup offers opt-in automatic reviews without granting consent 
     const state = { ...installed(), agents: [], hooks: [] };
     const guidance = installationGuidance(state, { api: 'https://service.example/api', uploadApproved });
     const action = guidance.enableAutomaticReviews;
-    assert.match(action.command, /npx @doomerlabs\/doomer onboard/);
+    assert.match(action.command, /npx @doomerlabs\/doomer@beta onboard/);
     assert.match(action.command, /--home/);
     assert.match(action.command, /--api-url https:\/\/service.example\/api/);
     assert.doesNotMatch(action.command, /--approve-uploads|--agent|--no-hooks/);
@@ -88,4 +88,12 @@ test('standalone setup offers opt-in automatic reviews without granting consent 
     }
   }
   assert.equal(installationGuidance(installed(), { uploadApproved: true }).enableAutomaticReviews, undefined);
+});
+
+
+test('recovery commands preserve the selected installer channel', () => {
+  assert.match(managerCommand('onboard'), /npx @doomerlabs\/doomer@beta onboard/);
+  assert.match(managerCommand('onboard', { channel: 'latest' }), /npx @doomerlabs\/doomer onboard/);
+  assert.match(managerCommand('install-hooks', { channel: 'beta' }), /npx @doomerlabs\/doomer@beta install-hooks/);
+  assert.throws(() => managerCommand('onboard', { channel: 'invalid' }), /Invalid installer channel/);
 });
