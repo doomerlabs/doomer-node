@@ -44,8 +44,8 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: doomerlabs/doomer
-          # Matching unreleased watch-agent CLI; validate before release.
-          ref: 0c9ffcd6c590c9c9b421000c38018bf2434a0715
+          # Source metadata for the exact published Go beta tested below.
+          ref: 2026.11.14.1-beta.1
           path: candidate-cli
           persist-credentials: false
       - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c
@@ -66,7 +66,7 @@ jobs:
                 '--description-file',str(description)]
           if os.environ.get('COMPONENT_BASE'): args += ['--base',os.environ['COMPONENT_BASE']]
           if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch': args.append('--full-suite')
-          args += ['--cli-source',os.environ['CANDIDATE_SOURCE'],'--node-source',os.environ['COMPONENT_SOURCE']]
+          args += ['--cli-version','2026.11.14.1-beta.1','--node-source',os.environ['COMPONENT_SOURCE']]
           raise SystemExit(subprocess.call(args))
           PYTHON
       - name: Validate selected result evidence
