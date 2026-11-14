@@ -66,16 +66,17 @@ trusted publishing. That settings change is separate from this PR.
 
 ## Release
 
-1. Update `package.json` and `package-lock.json` to an unused SemVer. Set
-   `package.json`'s `doomer.cliVersion` to the exact Go release tested with this
-   installer; reject a stale pin before committing. Resolve the Go tag to its
-   commit and compare it with the E2E candidate commit. If they differ (including
-   a squash merge), run the relevant agent E2E scenarios against the published
-   release archive and final Node source before accepting the pin. Record the
-   archive checksum and results. Review and merge the change,
-   then wait for main's Depot checks to pass.
-2. Publish and verify the exact pinned Go CLI first. A beta installer must pin
-   its tested Go beta; beta publication does not update the stable channel.
+1. Publish and verify the intended Go release first, following the Go repository's
+   release process. This happens before merging the Node release PR. A beta
+   installer must pin its tested Go beta; it does not change the stable channel.
+2. Update `package.json` and `package-lock.json` to an unused SemVer and set
+   `package.json`'s `doomer.cliVersion` to that published Go release. Record its
+   tag commit and archive SHA-256. CI verifies the release manifest commit
+   against the pinned source checkout and the archive against its reviewed
+   checksum, then passes those exact archive bytes to agent E2E. If earlier E2E
+   used a different candidate commit (including before a squash merge), rerun
+   relevant scenarios against the published archive and final Node source.
+   Reject a stale pin, review and merge, then wait for main's Depot checks.
 3. Create an annotated `VERSION` tag at that exact main commit and push the tag.
    For example, an authorized `0.0.2` release uses `0.0.2`.
 4. Follow the GitHub publishing job through registry verification. It publishes

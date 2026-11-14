@@ -57,7 +57,7 @@ jobs:
       - name: Select and run shared agent scenarios
         run: |
           python3 - <<'PYTHON'
-          import json,os,pathlib,subprocess
+          import hashlib,json,os,pathlib,subprocess,urllib.request
           event=json.loads(pathlib.Path(os.environ['GITHUB_EVENT_PATH']).read_text())
           description=pathlib.Path(os.environ['RUNNER_TEMP'])/'component-description.txt'
           description.write_text((event.get('pull_request') or {}).get('body') or '')
@@ -66,7 +66,22 @@ jobs:
                 '--description-file',str(description)]
           if os.environ.get('COMPONENT_BASE'): args += ['--base',os.environ['COMPONENT_BASE']]
           if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch': args.append('--full-suite')
-          args += ['--cli-version','2026.11.14.1-beta.1','--node-source',os.environ['COMPONENT_SOURCE']]
+          version='2026.11.14.1-beta.1'
+          filename='doomer_'+version+'_linux_amd64.tar.gz'
+          base='https://downloads.doomer.ai/cli/releases/'+version+'/'
+          def download(name):
+              request=urllib.request.Request(base+name,headers={'User-Agent':'Doomer-Release-Verification/1','X-Doomer-Release-Verification':'1'})
+              return urllib.request.urlopen(request,timeout=60).read()
+          manifest=json.loads(download('release-manifest.json'))
+          commit=subprocess.check_output(['git','-C',os.environ['CANDIDATE_SOURCE'],'rev-parse','HEAD'],text=True).strip()
+          if manifest['version']!=version or manifest['commit']!=commit: raise SystemExit('Release manifest does not match pinned source')
+          archive=download(filename)
+          digest=hashlib.sha256(archive).hexdigest()
+          if digest!='35d45067a2fbd0f230520cda3c22b20559413db122b607aa70f2a3f32fc908a5': raise SystemExit('Unexpected published archive bytes')
+          if manifest['artifacts'][filename]!='sha256:'+digest: raise SystemExit('Release manifest archive mismatch')
+          path=pathlib.Path(os.environ['RUNNER_TEMP'])/filename
+          path.write_bytes(archive)
+          args += ['--cli-archive',str(path),'--candidate-label',version,'--node-source',os.environ['COMPONENT_SOURCE']]
           raise SystemExit(subprocess.call(args))
           PYTHON
       - name: Validate selected result evidence
