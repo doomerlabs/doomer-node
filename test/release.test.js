@@ -63,10 +63,12 @@ test('npm tarball can be reproduced exactly and a different expected digest is r
   await assert.rejects(pack(join(root, 'wrong'), { ...first.evidence, integrity: 'wrong' }), /differs from the package tested/);
 });
 
-function archive(files) {
+function archive(files, modes = {}) {
   const entries = Object.entries(files).flatMap(([name, content]) => {
     const bytes = Buffer.from(content), header = Buffer.alloc(512);
-    header.write('package/' + name); header.write('0000644\0', 100);
+    header.write('package/' + name);
+    const mode = modes[name] ?? (name.startsWith('bin/') ? 0o755 : 0o644);
+    header.write(mode.toString(8).padStart(7, '0') + '\0', 100);
     header.write(bytes.length.toString(8).padStart(11, '0') + '\0', 124); header[156] = 48;
     return [header, bytes, Buffer.alloc((512 - bytes.length % 512) % 512)];
   });
@@ -76,7 +78,11 @@ function archive(files) {
 test('initial release adoption preserves immutable bytes and runtime files, allowing only newer README text', () => {
   const original = archive({ 'package.json': '{"version":"0.0.1"}', 'bin/doomer.js': 'original CLI', 'README.md': 'original docs' });
   const receipt = { schema: 1, name: '@doomerlabs/doomer', version: '0.0.1', sourceCommit: sha, publication: 'manual', integrity: 'sha512-' + createHash('sha512').update(original).digest('base64'), files: packageFiles(original) };
+  assert.equal(receipt.files['bin/doomer.js'].mode, 0o755);
   assert.doesNotThrow(() => verifyInitialRelease(original, original, receipt));
+  const originalContents = { 'package.json': '{"version":"0.0.1"}', 'bin/doomer.js': 'original CLI', 'README.md': 'original docs' };
+  assert.throws(() => verifyInitialRelease(archive(originalContents, { 'bin/doomer.js': 0o644 }), original, receipt), /file changed/);
+  assert.throws(() => verifyInitialRelease(archive(originalContents, { 'README.md': 0o755 }), original, receipt), /file changed/);
   const docs = archive({ 'package.json': '{"version":"0.0.1"}', 'bin/doomer.js': 'original CLI', 'README.md': 'new CI instructions' });
   assert.doesNotThrow(() => verifyInitialRelease(docs, original, receipt));
   const changed = archive({ 'package.json': '{"version":"0.0.1"}', 'bin/doomer.js': 'changed CLI', 'README.md': 'original docs' });

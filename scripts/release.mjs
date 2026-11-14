@@ -70,11 +70,15 @@ export function verifyInitialRelease(current, published, receipt) {
   if (receipt.schema !== 1 || receipt.name !== '@doomerlabs/doomer' || receipt.version !== '0.0.1' || receipt.publication !== 'manual' || !/^[a-f0-9]{40}$/.test(receipt.sourceCommit) || integrity(published) !== receipt.integrity) throw new Error('Initial release does not match its immutable publication receipt.');
   const originalFiles = packageFiles(published), currentFiles = packageFiles(current);
   const names = Object.keys(receipt.files).sort();
-  for (const files of [originalFiles, currentFiles]) {
+  const versions = [{ files: originalFiles, allowReadmeChange: false }, { files: currentFiles, allowReadmeChange: true }];
+  for (const { files, allowReadmeChange } of versions) {
     if (JSON.stringify(Object.keys(files).sort()) !== JSON.stringify(names)) throw new Error('Initial-release file set changed.');
     for (const name of names) {
       const recorded = receipt.files[name], actual = files[name];
-      if (actual.mode !== recorded.mode || (files === originalFiles || name !== 'README.md') && actual.sha256 !== recorded.sha256) throw new Error(`Initial-release file changed: ${name}`);
+      const modeChanged = actual.mode !== recorded.mode;
+      const contentChanged = actual.sha256 !== recorded.sha256;
+      const permittedReadmeEdit = allowReadmeChange && name === 'README.md';
+      if (modeChanged || (contentChanged && !permittedReadmeEdit)) throw new Error(`Initial-release file changed: ${name}`);
     }
   }
 }
