@@ -1,0 +1,51 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, writeFile, mkdir, rm, symlink } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { paths } from '../src/system.js';
+import { claudeReviewRules, configureClaudeReviewPermission, removeClaudeReviewPermission } from '../src/claude-policy.js';
+
+test('rules select only watcher review operations and reject pattern injection', () => {
+  const rules = claudeReviewRules('/safe/bin/doomer');
+  assert.equal(rules.length, 5);
+  assert.ok(rules.every(r => r.startsWith('Bash(/safe/bin/doomer watch ') && r.endsWith(' --control *)')));
+  assert.ok(!rules.some(r => r.includes('install') || r.includes(' agent ')));
+  for (const path of ['/tmp/evil*', '/tmp/with space/doomer', '/tmp/x)']) assert.throws(() => claudeReviewRules(path));
+});
+
+test('opt in preserves deny rules and existing allows; decline and uninstall remove only owned rules', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'claude-policy-'));
+  const before = { ...process.env };
+  t.after(async () => { for (const k of ['HOME','DOOMER_HOME','CLAUDE_CONFIG_DIR','DOOMER_DEV_INSTALL']) { if(before[k]===undefined)delete process.env[k];else process.env[k]=before[k]; } await rm(home,{recursive:true,force:true}); });
+  Object.assign(process.env,{HOME:home,DOOMER_HOME:join(home,'state'),CLAUDE_CONFIG_DIR:join(home,'claude'),DOOMER_DEV_INSTALL:'0'});
+  await mkdir(process.env.CLAUDE_CONFIG_DIR,{recursive:true});
+  const file=join(process.env.CLAUDE_CONFIG_DIR,'settings.json');
+  const executable=join(home,'doomer');
+  const target=join(home,'doomer-version');
+  await writeFile(target,'binary');
+  await symlink(target,executable);
+  const preexisting=claudeReviewRules(executable)[0];
+  await writeFile(file,JSON.stringify({permissions:{allow:[preexisting,'Read(*)'],deny:['Bash(rm *)']},theme:'dark'}));
+  await mkdir(`${paths().state}.lock`, { recursive: true });
+  await assert.rejects(configureClaudeReviewPermission(executable,'allow'), /Another Doomer operation/);
+  assert.deepEqual(JSON.parse(await readFile(file)).permissions.allow,[preexisting,'Read(*)']);
+  await rm(`${paths().state}.lock`, { recursive: true });
+  await configureClaudeReviewPermission(executable,'allow');
+  let config=JSON.parse(await readFile(file));
+  assert.equal(config.permissions.allow.length,11);
+  assert.deepEqual(config.permissions.deny,['Bash(rm *)']);
+  assert.equal(config.autoMode.allow[0], '$defaults');
+  assert.match(config.autoMode.allow[1], /Doomer review collaboration/);
+  await configureClaudeReviewPermission(executable,'allow');
+  assert.equal(JSON.parse(await readFile(file)).permissions.allow.length,11);
+  await configureClaudeReviewPermission(executable,'decline');
+  assert.deepEqual(JSON.parse(await readFile(file)).permissions.allow,[preexisting,'Read(*)']);
+  assert.equal((await configureClaudeReviewPermission(executable)).decision,'decline');
+  await configureClaudeReviewPermission(executable,'allow');
+  await removeClaudeReviewPermission();
+  config=JSON.parse(await readFile(file));
+  assert.deepEqual(config.permissions.allow,[preexisting,'Read(*)']);
+  assert.equal(config.theme,'dark');
+  assert.deepEqual(config.autoMode.allow, ['$defaults']);
+});

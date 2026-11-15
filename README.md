@@ -275,7 +275,7 @@ npx @doomerlabs/doomer@beta install
 ```
 
 The npm installer version and Go CLI version are independent. This beta
-installer pins Go CLI `2026.11.14.1-beta.1` by default, so no CLI version flag is
+installer pins Go CLI `2026.11.15-beta.1` by default, so no CLI version flag is
 needed. Reinstalling or updating this package retains its tested Go CLI version.
 Explicit local development binaries continue to override the published default.
 
@@ -316,3 +316,17 @@ report `reviewerAuthorization.uploadConsent`, `reviewerAuthorization.policy`, an
 that a running Codex session loaded it: reload or restart as instructed, then
 verify a normal review and finding response. No setup command disables automatic
 approval review or grants native hook trust.
+
+### Claude review command permission
+
+Onboarding separately offers narrow Claude Code allow rules for the installed
+Doomer executable's `watch hypotheses`, `watch findings respond`, `watch findings ls`,
+`watch results`, and `watch notice-ack` commands with `--control`. These permit
+assessment and finding decisions with explanations through an active watcher;
+they do not authorize installation, arbitrary shell commands, or override deny rules.
+Review the displayed rules before accepting. For noninteractive onboarding, use
+`--claude-review-permission allow` or `--claude-review-permission decline`. Saved
+declines survive updates; only an explicit new decision changes them. Uninstall
+removes only rules added by this installation. Existing user rules are preserved.
+The opt-in also adds a scoped `autoMode.allow` explanation for these operations,
+retaining `$defaults` and existing rules. Managed hard-deny rules still apply.

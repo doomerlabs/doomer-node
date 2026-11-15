@@ -98,6 +98,12 @@ test('beta releases use the beta channel and enforce exact prerelease metadata',
   const lock = { ...pkg, packages: { '': pkg } };
   assert.deepEqual(validateMetadata(pkg, lock, pkg.version), { name: pkg.name, version: pkg.version });
   assert.throws(() => validateMetadata({ ...pkg, doomer: undefined }, lock, pkg.version), /must pin/);
+  for (const cliVersion of ['2026.11.15-beta.1', '2026.11.15.1-beta.1']) {
+    assert.doesNotThrow(() => validateMetadata({ ...pkg, doomer: { cliVersion } }, lock, pkg.version));
+  }
+  for (const cliVersion of ['2026.11.15', '2026.11-beta.1', '2026.11.15-beta.1/extra']) {
+    assert.throws(() => validateMetadata({ ...pkg, doomer: { cliVersion } }, lock, pkg.version), /must pin/);
+  }
   assert.equal(releaseChannel(pkg.version), 'beta');
   assert.equal(releaseChannel('0.1.0'), 'latest');
   for (const version of ['0.1.0-beta.01', '0.1.0-rc.1', 'v0.1.0', '0.1.0;echo bad']) {
