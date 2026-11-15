@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, mkdir, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { paths } from '../src/system.js';
 import { claudeReviewRules, configureClaudeReviewPermission, removeClaudeReviewPermission } from '../src/claude-policy.js';
 
 test('rules select only watcher review operations and reject pattern injection', () => {
@@ -26,6 +27,10 @@ test('opt in preserves deny rules and existing allows; decline and uninstall rem
   await symlink(target,executable);
   const preexisting=claudeReviewRules(executable)[0];
   await writeFile(file,JSON.stringify({permissions:{allow:[preexisting,'Read(*)'],deny:['Bash(rm *)']},theme:'dark'}));
+  await mkdir(`${paths().state}.lock`, { recursive: true });
+  await assert.rejects(configureClaudeReviewPermission(executable,'allow'), /Another Doomer operation/);
+  assert.deepEqual(JSON.parse(await readFile(file)).permissions.allow,[preexisting,'Read(*)']);
+  await rm(`${paths().state}.lock`, { recursive: true });
   await configureClaudeReviewPermission(executable,'allow');
   let config=JSON.parse(await readFile(file));
   assert.equal(config.permissions.allow.length,11);

@@ -93,3 +93,19 @@ test('either uninstall order preserves the other profile and removes the shared 
     await assert.rejects(lstat(f.global), { code: 'ENOENT' });
   }
 });
+
+
+test('permission teardown failure does not prevent uninstall cleanup', async t => {
+  const f = await fixture(t);
+  const settings = join(f.env.CLAUDE_CONFIG_DIR, 'settings.json');
+  await writeFile(settings, JSON.stringify({ permissions: { allow: 42 }, hooks: {} }));
+  const statePath = join(f.managed, 'state.json');
+  const state = JSON.parse(await readFile(statePath));
+  state.claudeReviewPermission = { decision: 'allow', file: settings, ownedRules: ['owned'] };
+  await writeFile(statePath, JSON.stringify(state));
+  const result = JSON.parse((await f.run()).stdout);
+  assert.match(result.claudePermissionError, /Invalid Claude allow rules/);
+  assert.equal(result.removedData, true);
+  assert.equal(await readFile(f.audit, 'utf8'), 'stopped');
+  assert.ok(result.removedHooks.includes(f.hook));
+});

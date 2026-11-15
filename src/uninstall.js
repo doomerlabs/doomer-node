@@ -90,7 +90,8 @@ export async function uninstall() {
     await writeJSON(join(p.home,'uninstalling.json'),{startedAt:new Date().toISOString()});
     if(await exists(p.state)) await changeState(s=>{s.grants=[];});
   }
-  await removeClaudeReviewPermission();
+  try { await removeClaudeReviewPermission(); }
+  catch (error) { result.claudePermissionError = error.message; }
   const hookFiles=[...new Set([...(state.hookFiles||[]),...agents.map(hookFile)])];
   for (const file of hookFiles) if(await removeHooks(file)) result.removedHooks.push(file);
   if(result.removedHooks.some(file=>basename(file)==='hooks.json'))result.codexReload=await reloadCodexHooks();

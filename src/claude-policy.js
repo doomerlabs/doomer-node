@@ -35,6 +35,7 @@ export async function configureClaudeReviewPermission(executable, decision, ask)
   const autoRule = desired.length ? `Doomer review collaboration: permit only ${JSON.stringify([...new Set([executable, await realpath(executable)])])} invoking watch hypotheses, watch findings respond, watch findings ls, watch results, or watch notice-ack with an active --control key for the user's approved Doomer service. Assessments, fixed/dismissed/deferred decisions, agreement flags, and repository-specific explanations are authorized review inputs, not changes to the reviewer or its rules. Acknowledge advisories only after displaying them. This does not permit changing reviewer configuration, installing software, arbitrary shell commands, or overriding explicit denials.` : undefined;
   let owned = [];
   let ownedAutoRules = [];
+  let result;
   await locked(file, async () => {
     const config = await readJSON(file, {});
     if (!config || typeof config !== 'object' || Array.isArray(config) || (config.permissions !== undefined && (!config.permissions || typeof config.permissions !== 'object' || Array.isArray(config.permissions)))) throw new Error('Invalid Claude permission settings; no changes applied.');
@@ -52,6 +53,15 @@ export async function configureClaudeReviewPermission(executable, decision, ask)
     ownedAutoRules = autoRule && !keptAuto.includes(autoRule) ? [autoRule] : [];
     const nextAuto = [...keptAuto, ...ownedAutoRules];
     const changeAuto = (autoRule || oldAuto.length) && JSON.stringify(autoAllow) !== JSON.stringify(nextAuto);
+    // Persist ownership intent before settings. A crash can leave extra owned
+    // entries in the ledger, but cannot leave installed rules unaccounted for.
+    // Keep prior ownership until removal from settings has succeeded as well.
+    result = { decision, file, ownedRules: owned, ownedAutoRules };
+    await changeState(s => { s.claudeReviewPermission = {
+      ...result,
+      ownedRules: [...new Set([...oldOwned, ...owned])],
+      ownedAutoRules: [...new Set([...oldAuto, ...ownedAutoRules])],
+    }; });
     if (changeAuto) { config.autoMode ||= {}; config.autoMode.allow = nextAuto; }
     if (JSON.stringify(allow) !== JSON.stringify(next) || changeAuto) {
       config.permissions ||= {};
@@ -59,9 +69,8 @@ export async function configureClaudeReviewPermission(executable, decision, ask)
       else delete config.permissions.allow;
       await atomicWrite(file, `${JSON.stringify(config, null, 2)}\n`);
     }
+    await changeState(s => { s.claudeReviewPermission = result; });
   });
-  const result = { decision, file, ownedRules: owned, ownedAutoRules };
-  await changeState(s => { s.claudeReviewPermission = result; });
   return result;
 }
 
