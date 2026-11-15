@@ -71,6 +71,7 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
     const name = hook.agent === 'claude' ? 'Claude Code' : 'Codex';
     row(name, configured ? 'Hooks configured; activation unverified' : hook.error || (hook.enabled === false ? 'Hooks disabled' : 'Hooks need repair'), configured ? 'ok' : 'error');
   }
+  if (result.hooks.some(h => h.agent === 'claude')) row('Claude review', result.claudeReviewPermission || 'unverified', result.claudeReviewPermission === 'allow' ? 'ok' : 'warning');
   if (!result.automaticReviews) row('Watch', 'Current watch command unavailable', 'error');
   if (result.reviewerAuthorization) {
     const auth = result.reviewerAuthorization;
@@ -101,6 +102,7 @@ export function formatSetup(result) {
       if (issue.instruction) lines.push(issue.instruction);
     }
   }
+  if (result.agents.includes('claude')) lines.push('', `Claude review permission: ${result.claudeReviewPermission || 'unverified'}.`, 'Allowing this permission is separate from source-upload consent and hook trust. If not configured, review the scoped commands and rerun onboard with --claude-review-permission allow or decline.');
   for (const policy of result.codexReviewPolicy?.policies || []) {
     lines.push('', `Codex reviewer policy: ${policy.state}; activation ${policy.activation}.`);
     if (policy.state !== 'configured' && policy.state !== 'declined') {

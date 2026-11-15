@@ -5,6 +5,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { agents, hookFile, globalSkillPaths, removeHooks } from './hooks.js';
 import { paths, nativePath, developmentInstall, packageRoot, readState, otherState, readJSON, writeJSON, changeState, exists, locked, run, hash } from './system.js';
 import { endpoint } from './api.js';
+import { removeClaudeReviewPermission } from './claude-policy.js';
 import { reloadCodexHooks } from './codex.js';
 
 const inside = (root, path) => {
@@ -89,6 +90,7 @@ export async function uninstall() {
     await writeJSON(join(p.home,'uninstalling.json'),{startedAt:new Date().toISOString()});
     if(await exists(p.state)) await changeState(s=>{s.grants=[];});
   }
+  await removeClaudeReviewPermission();
   const hookFiles=[...new Set([...(state.hookFiles||[]),...agents.map(hookFile)])];
   for (const file of hookFiles) if(await removeHooks(file)) result.removedHooks.push(file);
   if(result.removedHooks.some(file=>basename(file)==='hooks.json'))result.codexReload=await reloadCodexHooks();
