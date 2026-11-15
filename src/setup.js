@@ -10,6 +10,7 @@ import { resolveAPI } from './api.js';
 import { uploadPrompt, acceptsUploadAnswer } from './permissions.js';
 import { installNative, validateCLIVersion } from './native.js';
 import { configureReviewerPolicy } from './reviewer-policy.js';
+import { configureClaudeReviewPermission } from './claude-policy.js';
 import { reloadCodexHooks } from './codex.js';
 import { inspectNativeInstallation } from './doctor.js';
 import { withSkillSource } from './skill-source.js';
@@ -189,6 +190,7 @@ export async function setup(options, { forceSkill = true } = {}) {
   validateCLIVersion(options['cli-version']);
   resolveAPI(options['api-url'], (await readState()).api);
   const selected = await selectAgents(options);
+  if (options['claude-review-permission'] && !selected.includes('claude')) throw new Error('--claude-review-permission requires selecting claude.');
   if (options['reviewer-policy'] && !selected.includes('codex')) throw new Error('--reviewer-policy requires selecting codex.');
   if (developmentInstall() && !process.env.DOOMER_NATIVE_BINARY) throw new Error('Development installation requires DOOMER_NATIVE_BINARY.');
   await rm(join(paths().home,'uninstalling.json'),{force:true});
@@ -201,6 +203,7 @@ export async function setup(options, { forceSkill = true } = {}) {
   }
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
   await setupStep('Configuring agent hooks', retry, () => configure(selected, native.executable, options));
+  if (selected.includes('claude')) await configureClaudeReviewPermission(native.executable, options['claude-review-permission'], question);
   const codexReviewPolicy = selected.includes('codex')
     ? await setupStep('Configuring Codex reviewer policy', retry, () => configureReviewerPolicy(native.executable, options, question)) : undefined;
   const result = { ...installed, ...native, agents: selected, ...(await doctor({ policy: codexReviewPolicy })) };
@@ -221,6 +224,7 @@ export async function doctor({ policy } = {}) {
   const skill = await skillPresent(state.agents);
   const ready = cli && inspection.nativeStatus === 'available' && automaticReviews && inspection.commandInstalled && skill && hooks.every(h => h.configured && h.enabled);
   const result = { ready, cli, ...inspection, automaticReviews, version: state.cliVersion || null,
+    claudeReviewPermission: state.claudeReviewPermission?.decision || 'unverified',
     executable: state.executable || null, skill: skill ? 'installed' : 'missing', hooks,
     uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })) };
   const api = resolveAPI(undefined, state.api);
@@ -235,6 +239,7 @@ export async function doctor({ policy } = {}) {
 
 export async function update(options) {
   const selected = (await readState()).agents;
+  if (options['claude-review-permission'] && !selected.includes('claude')) throw new Error('--claude-review-permission requires selecting claude.');
   if (options['reviewer-policy'] && !selected.includes('codex')) throw new Error('--reviewer-policy requires configured Codex hooks.');
   const channel = metadata.version.includes('-beta.') ? 'beta' : 'latest';
   const raw = await npm(['view', `${metadata.name}@${channel}`, 'version', '--json']);
@@ -246,6 +251,7 @@ export async function update(options) {
   await installSkill(selected);
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command.');
   for (const agent of selected) await installHooks(agent, native.executable);
+  if (selected.includes('claude')) await configureClaudeReviewPermission(native.executable, options['claude-review-permission'], question);
   const codexReviewPolicy = selected.includes('codex')
     ? await configureReviewerPolicy(native.executable, options, question) : undefined;
   const updated = { ...result, ...native, version, agents: selected, ...(await doctor({ policy: codexReviewPolicy })) };
