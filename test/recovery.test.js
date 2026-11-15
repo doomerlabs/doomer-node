@@ -113,5 +113,13 @@ test('mixed policy states preserve declines and offer repair for missing scopes'
  const result=installationGuidance({...installed(),codexReviewPolicy:{policies:[{state:'declined'},{state:'missing'}]}},{uploadApproved:true})
  assert.ok(result.issues.some(i=>i.code==='reviewer_policy_declined'&&!i.command))
  assert.ok(result.issues.some(i=>i.code==='reviewer_policy_missing'&&i.command.includes('onboard')))
+ assert.equal(result.reviewerAuthorization.policy, 'missing_or_outdated')
+ assert.match(result.issues.find(i=>i.code==='reviewer_policy_missing').instruction, /finding decisions, agreement flags, and repository-specific explanations/)
  assert.doesNotMatch(formatSetup({...installed(),...result}),/finding decisions and explanations approved/)
+})
+
+test('policy inspection errors do not infer missing scopes',()=>{
+ const result=installationGuidance({...installed(),codexReviewPolicy:{error:'inspection failed',policies:[{state:'missing'}]}},{uploadApproved:true})
+ assert.equal(result.reviewerAuthorization.policy, 'unverified')
+ assert.deepEqual(result.issues.map(i=>i.code), ['reviewer_policy_unavailable'])
 })
