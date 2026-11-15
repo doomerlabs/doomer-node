@@ -97,3 +97,29 @@ test('recovery commands preserve the selected installer channel', () => {
   assert.match(managerCommand('install-hooks', { channel: 'beta' }), /npx @doomerlabs\/doomer@beta install-hooks/);
   assert.throws(() => managerCommand('onboard', { channel: 'invalid' }), /Invalid installer channel/);
 });
+
+
+test('reviewer diagnostics distinguish consent, installed policy and unverified activation', () => {
+  for (const [state, policy, issue] of [['configured','installed',undefined], ['missing','missing_or_outdated','reviewer_policy_missing'], ['declined','declined','reviewer_policy_declined']]) {
+    const result = installationGuidance({ ...installed(), codexReviewPolicy: { policies: [{state}], activation:'unverified' } }, {uploadApproved:true});
+    assert.deepEqual(result.reviewerAuthorization, { uploadConsent:'approved', policy, activation:'unverified' });
+    assert.equal(result.reviewConfigured, state === 'configured');
+    assert.equal(result.issues[0]?.code, issue);
+  }
+});
+
+
+test('mixed policy states preserve declines and offer repair for missing scopes',()=>{
+ const result=installationGuidance({...installed(),codexReviewPolicy:{policies:[{state:'declined'},{state:'missing'}]}},{uploadApproved:true})
+ assert.ok(result.issues.some(i=>i.code==='reviewer_policy_declined'&&!i.command))
+ assert.ok(result.issues.some(i=>i.code==='reviewer_policy_missing'&&i.command.includes('onboard')))
+ assert.equal(result.reviewerAuthorization.policy, 'missing_or_outdated')
+ assert.match(result.issues.find(i=>i.code==='reviewer_policy_missing').instruction, /finding decisions, agreement flags, and repository-specific explanations/)
+ assert.doesNotMatch(formatSetup({...installed(),...result}),/finding decisions and explanations approved/)
+})
+
+test('policy inspection errors do not infer missing scopes',()=>{
+ const result=installationGuidance({...installed(),codexReviewPolicy:{error:'inspection failed',policies:[{state:'missing'}]}},{uploadApproved:true})
+ assert.equal(result.reviewerAuthorization.policy, 'unverified')
+ assert.deepEqual(result.issues.map(i=>i.code), ['reviewer_policy_unavailable'])
+})

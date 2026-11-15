@@ -300,3 +300,19 @@ through `onboard` without making account-verification network calls. Configured
 policy and a successful configuration reload still leave activation unverified: verify an
 ordinary Doomer results/finding operation in the actual running Codex session.
 A pending-policy proposal never grants permission to bypass an approval denial.
+
+### Reviewer authorization during updates
+
+`update` inspects the Codex reviewer policy for the selected service and account,
+just like `onboard`. Missing or outdated policy requires a separate decision;
+noninteractive output includes the proposal and its digest. After reviewing it,
+use `update --reviewer-policy allow --reviewer-policy-proposal DIGEST` (or
+`decline`). Existing declines are preserved.
+
+Review upload consent includes source snapshots, task context, and finding
+statuses, agreement flags, explanations, and supporting evidence. JSON diagnostics
+report `reviewerAuthorization.uploadConsent`, `reviewerAuthorization.policy`, and
+`reviewerAuthorization.activation` separately. Policy installation is not proof
+that a running Codex session loaded it: reload or restart as instructed, then
+verify a normal review and finding response. No setup command disables automatic
+approval review or grants native hook trust.
