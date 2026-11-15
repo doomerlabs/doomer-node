@@ -328,4 +328,5 @@ Review the displayed rules before accepting. For noninteractive onboarding, use
 `--claude-review-permission allow` or `--claude-review-permission decline`. Saved
 declines survive updates; only an explicit new decision changes them. Uninstall
 removes only rules added by this installation. Existing user rules are preserved.
-`autoMode.classifyAllShell` and managed policies can still require approval.
+The opt-in also adds a scoped `autoMode.allow` explanation for these operations,
+retaining `$defaults` and existing rules. Managed hard-deny rules still apply.

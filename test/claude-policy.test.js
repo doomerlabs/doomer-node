@@ -30,6 +30,8 @@ test('opt in preserves deny rules and existing allows; decline and uninstall rem
   let config=JSON.parse(await readFile(file));
   assert.equal(config.permissions.allow.length,11);
   assert.deepEqual(config.permissions.deny,['Bash(rm *)']);
+  assert.equal(config.autoMode.allow[0], '$defaults');
+  assert.match(config.autoMode.allow[1], /Doomer review collaboration/);
   await configureClaudeReviewPermission(executable,'allow');
   assert.equal(JSON.parse(await readFile(file)).permissions.allow.length,11);
   await configureClaudeReviewPermission(executable,'decline');
@@ -40,4 +42,5 @@ test('opt in preserves deny rules and existing allows; decline and uninstall rem
   config=JSON.parse(await readFile(file));
   assert.deepEqual(config.permissions.allow,[preexisting,'Read(*)']);
   assert.equal(config.theme,'dark');
+  assert.deepEqual(config.autoMode.allow, ['$defaults']);
 });
