@@ -1,4 +1,5 @@
 import { isAbsolute } from 'node:path';
+import { realpath } from 'node:fs/promises';
 import { hookFile } from './hooks.js';
 import { atomicWrite, locked, readJSON, readState, changeState } from './system.js';
 
@@ -26,7 +27,11 @@ export async function configureClaudeReviewPermission(executable, decision, ask)
   decision ||= previous?.decision;
   if (!decision) return { decision: 'unverified' };
   const file = hookFile('claude');
-  const desired = decision === 'allow' ? claudeReviewRules(executable) : [];
+  let desired = [];
+  if (decision === 'allow') {
+    const resolved = await realpath(executable);
+    desired = [...new Set([...claudeReviewRules(executable), ...claudeReviewRules(resolved)])];
+  }
   let owned = [];
   await locked(file, async () => {
     const config = await readJSON(file, {});
