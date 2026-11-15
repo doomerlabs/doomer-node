@@ -97,3 +97,13 @@ test('recovery commands preserve the selected installer channel', () => {
   assert.match(managerCommand('install-hooks', { channel: 'beta' }), /npx @doomerlabs\/doomer@beta install-hooks/);
   assert.throws(() => managerCommand('onboard', { channel: 'invalid' }), /Invalid installer channel/);
 });
+
+
+test('reviewer diagnostics distinguish consent, installed policy and unverified activation', () => {
+  for (const [state, policy, issue] of [['configured','installed',undefined], ['missing','missing_or_outdated','reviewer_policy_missing'], ['declined','declined','reviewer_policy_declined']]) {
+    const result = installationGuidance({ ...installed(), codexReviewPolicy: { policies: [{state}], activation:'unverified' } }, {uploadApproved:true});
+    assert.deepEqual(result.reviewerAuthorization, { uploadConsent:'approved', policy, activation:'unverified' });
+    assert.equal(result.reviewConfigured, state === 'configured');
+    assert.equal(result.issues[0]?.code, issue);
+  }
+});

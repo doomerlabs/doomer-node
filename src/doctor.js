@@ -72,6 +72,11 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
     row(name, configured ? 'Hooks configured; activation unverified' : hook.error || (hook.enabled === false ? 'Hooks disabled' : 'Hooks need repair'), configured ? 'ok' : 'error');
   }
   if (!result.automaticReviews) row('Watch', 'Current watch command unavailable', 'error');
+  if (result.reviewerAuthorization) {
+    const auth = result.reviewerAuthorization;
+    row('Consent', auth.uploadConsent === 'approved' ? 'Snapshots, task context, finding decisions and explanations approved' : 'Not approved', auth.uploadConsent === 'approved' ? 'ok' : 'warning');
+    if (auth.policy !== 'not_required') row('Review policy', `${auth.policy}; activation ${auth.activation}`, auth.policy === 'installed' ? 'ok' : 'warning');
+  }
   rows.push('', paint(result.ready ? 'Installation ready' : 'Installation needs attention', result.ready ? '32;1' : '33;1'));
   if (!result.onPath && result.commandInstalled) rows.push(`Add ${dirname(result.globalCommand)} to the front of PATH to use this installation.`);
   for (const issue of result.issues || []) {
@@ -88,7 +93,7 @@ export function formatSetup(result) {
   const names = result.agents.map(a => a === 'claude' ? 'Claude Code' : 'Codex').join(' and ');
   const lines = [result.ready ? `Doomer is set up${names ? ` for ${names}` : ' for manual reviews'}.` : 'Doomer setup needs attention.',
     `CLI: ${result.executable}`,
-    result.uploadApproved ? 'Source uploads: approved for this service.' : 'Source uploads: off.'];
+    result.uploadApproved ? 'Review uploads: snapshots, task context, finding decisions and explanations approved for this service.' : 'Review uploads: off.'];
   if (result.issues.length) {
     for (const issue of result.issues) {
       lines.push('', issue.message);

@@ -47,8 +47,8 @@ export async function main(args) {
   if (options.version) { console.log(metadata.version); return 0; }
   if (options.help || !positionals.length) { console.log(HELP); return 0; }
   const [command, ...extra] = positionals;
-  if (Object.hasOwn(options, 'reviewer-policy') && (!['allow', 'decline'].includes(options['reviewer-policy']) || !['install', 'onboard'].includes(command))) throw new Error('--reviewer-policy allow|decline is supported only by install and onboard, after reviewing the scoped proposal.');
-  if (Object.hasOwn(options, 'reviewer-policy-proposal') && (!['install', 'onboard'].includes(command) || !options['reviewer-policy'])) throw new Error('--reviewer-policy-proposal requires a reviewer-policy decision with install or onboard.');
+  if (Object.hasOwn(options, 'reviewer-policy') && (!['allow', 'decline'].includes(options['reviewer-policy']) || !['install', 'onboard', 'update'].includes(command))) throw new Error('--reviewer-policy allow|decline is supported only by install, onboard, and update, after reviewing the scoped proposal.');
+  if (Object.hasOwn(options, 'reviewer-policy-proposal') && (!['install', 'onboard', 'update'].includes(command) || !options['reviewer-policy'])) throw new Error('--reviewer-policy-proposal requires a reviewer-policy decision with install, onboard, or update.');
   if (Object.hasOwn(options, 'check') && command !== 'upgrade') throw new Error('--check is supported only by upgrade.');
   if (Object.hasOwn(options, 'cli-version') && !['install', 'onboard'].includes(command)) throw new Error('--cli-version is supported only by install and onboard.');
   if (extra.length) throw new Error('Unexpected command arguments. Run npx @doomerlabs/doomer --help.');
@@ -91,7 +91,7 @@ export async function main(args) {
     }
     case 'update': {
       const result = await update(options);
-      console.log(options.json ? JSON.stringify(result, null, 2) : `Doomer updated to ${result.version}. ${result.next}`);
+      console.log(options.json ? JSON.stringify(result, null, 2) : `Doomer manager updated to ${result.version}.\n${formatSetup(result)}`);
       return result.ready ? 0 : 1;
     }
     case 'uninstall': {

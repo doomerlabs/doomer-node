@@ -9,7 +9,7 @@ test('global approval covers all repositories and agents, only for the selected 
   }
   assert.equal(hasUploadApproval(state,'https://example.com/api','/another/repository','codex'),false);
   assert.equal(hasUploadApproval({grants:[]},'https://doomer.ai/api','/repo','codex'),false);
-  assert.equal(uploadPrompt('https://doomer.ai/api'),'Allow Doomer reviews to upload source snapshots to Doomer (https://doomer.ai)? [Y/n] ');
+  assert.equal(uploadPrompt('https://doomer.ai/api'),'Allow Doomer reviews to upload source snapshots, task context, and finding decisions with explanations to Doomer (https://doomer.ai)? [Y/n] ');
 });
 
 test('upload prompt accepts Enter by default and honors an explicit no', () => {

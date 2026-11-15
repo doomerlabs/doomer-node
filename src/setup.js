@@ -234,6 +234,8 @@ export async function doctor({ policy } = {}) {
 }
 
 export async function update(options) {
+  const selected = (await readState()).agents;
+  if (options['reviewer-policy'] && !selected.includes('codex')) throw new Error('--reviewer-policy requires configured Codex hooks.');
   const channel = metadata.version.includes('-beta.') ? 'beta' : 'latest';
   const raw = await npm(['view', `${metadata.name}@${channel}`, 'version', '--json']);
   const version = JSON.parse(raw.toString());
@@ -241,11 +243,12 @@ export async function update(options) {
   const result = await installCLI({ version });
   const packageMetadata = JSON.parse(await readFile(join(dirname(result.runtime), '..', 'package.json'), 'utf8'));
   const native = await installNative({ update:true, packageMetadata });
-  const selected = (await readState()).agents;
   await installSkill(selected);
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command.');
   for (const agent of selected) await installHooks(agent, native.executable);
-  const updated = { ...result, ...native, version, ...(await doctor()) };
+  const codexReviewPolicy = selected.includes('codex')
+    ? await configureReviewerPolicy(native.executable, options, question) : undefined;
+  const updated = { ...result, ...native, version, agents: selected, ...(await doctor({ policy: codexReviewPolicy })) };
   if(selected.includes('codex')) {
     updated.codexReload=await reloadCodexHooks();
 

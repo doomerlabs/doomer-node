@@ -30,6 +30,9 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
     else if (!hook.enabled) add('hooks_disabled', `${hook.agent} hooks are disabled in agent settings.`, null, `Enable hooks in ${hook.agent}, then review and trust Doomer in /hooks.`);
   }
   if (result.codexReviewPolicy?.error) add('reviewer_policy_unavailable', result.codexReviewPolicy.error, managerCommand('onboard', { agents, api }));
+  else if (result.codexReviewPolicy?.policies.some(p => p.state === 'declined')) {
+    add('reviewer_policy_declined', 'Codex reviewer authorization was declined.', null, 'The saved decline is preserved. Revisit that decision explicitly before enabling automatic review authorization.');
+  }
   else if (result.codexReviewPolicy?.policies.some(p => !['configured', 'declined'].includes(p.state))) {
     add('reviewer_policy_missing', 'Codex reviewer authorization needs a separate decision.', managerCommand('onboard', { agents, api }), 'Display and review the returned policy before accepting it. Upload consent and hook trust remain separate.');
   }
@@ -43,7 +46,16 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
     command: managerCommand('onboard', { api }),
     instruction: 'Choose Codex, Claude Code, or both, review upload permission, then review and trust the hooks in your agent.',
   };
-  return { issues, uploadApproved, activation, reviewConfigured: result.ready && uploadApproved && !issues.some(i => i.code.startsWith('reviewer_policy_')), next, enableAutomaticReviews };
+  const policyStates = result.codexReviewPolicy?.policies.map(p => p.state) || [];
+  const reviewerAuthorization = {
+    uploadConsent: uploadApproved ? 'approved' : 'not_approved',
+    policy: !agents.includes('codex') ? 'not_required'
+      : policyStates.includes('declined') ? 'declined'
+      : policyStates.length && policyStates.every(state => state === 'configured') ? 'installed'
+      : policyStates.length ? 'missing_or_outdated' : 'unverified',
+    activation: agents.includes('codex') ? 'unverified' : 'not_required',
+  };
+  return { issues, uploadApproved, activation, reviewerAuthorization, reviewConfigured: result.ready && uploadApproved && !issues.some(i => i.code.startsWith('reviewer_policy_')), next, enableAutomaticReviews };
 }
 
 export class SetupError extends Error {
