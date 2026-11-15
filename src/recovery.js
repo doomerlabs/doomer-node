@@ -33,7 +33,7 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
   else if (result.codexReviewPolicy?.policies.some(p => p.state === 'declined')) {
     add('reviewer_policy_declined', 'Codex reviewer authorization was declined.', null, 'The saved decline is preserved. Revisit that decision explicitly before enabling automatic review authorization.');
   }
-  else if (result.codexReviewPolicy?.policies.some(p => !['configured', 'declined'].includes(p.state))) {
+  if (result.codexReviewPolicy?.policies.some(p => !['configured', 'declined'].includes(p.state))) {
     add('reviewer_policy_missing', 'Codex reviewer authorization needs a separate decision.', managerCommand('onboard', { agents, api }), 'Display and review the returned policy before accepting it. Upload consent and hook trust remain separate.');
   }
   if (!uploadApproved) add('uploads_not_approved', 'Source uploads are not approved for this service. Automatic reviews will not run.', managerCommand('onboard', { agents, api }), 'Review the upload prompt and approve only if you want reviews. Declining keeps uploads off.');

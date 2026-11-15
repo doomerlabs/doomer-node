@@ -107,3 +107,11 @@ test('reviewer diagnostics distinguish consent, installed policy and unverified 
     assert.equal(result.issues[0]?.code, issue);
   }
 });
+
+
+test('mixed policy states preserve declines and offer repair for missing scopes',()=>{
+ const result=installationGuidance({...installed(),codexReviewPolicy:{policies:[{state:'declined'},{state:'missing'}]}},{uploadApproved:true})
+ assert.ok(result.issues.some(i=>i.code==='reviewer_policy_declined'&&!i.command))
+ assert.ok(result.issues.some(i=>i.code==='reviewer_policy_missing'&&i.command.includes('onboard')))
+ assert.doesNotMatch(formatSetup({...installed(),...result}),/finding decisions and explanations approved/)
+})

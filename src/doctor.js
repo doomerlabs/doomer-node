@@ -93,7 +93,7 @@ export function formatSetup(result) {
   const names = result.agents.map(a => a === 'claude' ? 'Claude Code' : 'Codex').join(' and ');
   const lines = [result.ready ? `Doomer is set up${names ? ` for ${names}` : ' for manual reviews'}.` : 'Doomer setup needs attention.',
     `CLI: ${result.executable}`,
-    result.uploadApproved ? 'Review uploads: snapshots, task context, finding decisions and explanations approved for this service.' : 'Review uploads: off.'];
+    result.uploadApproved ? 'Review uploads approved for this service.' : 'Review uploads: off.'];
   if (result.issues.length) {
     for (const issue of result.issues) {
       lines.push('', issue.message);

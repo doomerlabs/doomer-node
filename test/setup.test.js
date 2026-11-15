@@ -128,6 +128,7 @@ else process.exit(1);
   assert.equal(approved.grants[0].agents, undefined);
   await exec(process.execPath, [entry, 'revoke'], {env, cwd: home});
   assert.equal(JSON.parse(await readFile(join(home, 'state', 'state.json'))).grants.length, 0);
+  assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).reviewerAuthorization.uploadConsent, 'not_approved');
   await writeFile(join(codex, 'hooks.json'), JSON.stringify({ hooks: {}, permissions: 'preserve' }));
   await assert.rejects(cli(['doctor', '--json']));
   await cli(['install-hooks', '--agent', 'codex']);
