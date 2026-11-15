@@ -275,7 +275,7 @@ npx @doomerlabs/doomer@beta install
 ```
 
 The npm installer version and Go CLI version are independent. This beta
-installer pins Go CLI `2026.11.14.1-beta.1` by default, so no CLI version flag is
+installer pins Go CLI `2026.11.15-beta.1` by default, so no CLI version flag is
 needed. Reinstalling or updating this package retains its tested Go CLI version.
 Explicit local development binaries continue to override the published default.
 

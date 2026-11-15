@@ -38,14 +38,14 @@ jobs:
         with:
           repository: doomerlabs/agent-e2e
           token: ${{ secrets.AGENT_E2E_READ_TOKEN }}
-          ref: d7d14dad3e27c5725b789f8be5cdd79490ee9296
+          ref: 42668dca13ce90f77a1605ce8acac8642e19f91d
           path: e2e-runner
           persist-credentials: false
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: doomerlabs/doomer
           # Source metadata for the exact published Go beta tested below.
-          ref: 2026.11.14.1-beta.1
+          ref: 2026.11.15-beta.1
           path: candidate-cli
           persist-credentials: false
       - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c
@@ -66,7 +66,7 @@ jobs:
                 '--description-file',str(description)]
           if os.environ.get('COMPONENT_BASE'): args += ['--base',os.environ['COMPONENT_BASE']]
           if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch': args.append('--full-suite')
-          version='2026.11.14.1-beta.1'
+          version='2026.11.15-beta.1'
           filename='doomer_'+version+'_linux_amd64.tar.gz'
           base='https://downloads.doomer.ai/cli/releases/'+version+'/'
           def download(name):
@@ -77,11 +77,12 @@ jobs:
           if manifest['version']!=version or manifest['commit']!=commit: raise SystemExit(f'Release manifest {manifest.get("version")} at {manifest.get("commit")} does not match {version} at {commit}')
           archive=download(filename)
           digest=hashlib.sha256(archive).hexdigest()
-          if digest!='35d45067a2fbd0f230520cda3c22b20559413db122b607aa70f2a3f32fc908a5': raise SystemExit(f'Unexpected {filename} SHA-256: {digest}')
+          if digest!='5155ed238107cc170ab0322c857b803227174902efaaa0156fd35940e6289de8': raise SystemExit(f'Unexpected {filename} SHA-256: {digest}')
           if manifest.get('artifacts',{}).get(filename)!='sha256:'+digest: raise SystemExit(f'Release manifest missing or mismatching {filename}: expected sha256:{digest}, got {manifest.get("artifacts",{}).get(filename)}')
           path=pathlib.Path(os.environ['RUNNER_TEMP'])/filename
           path.write_bytes(archive)
-          args += ['--cli-archive',str(path),'--candidate-label',version,'--node-source',os.environ['COMPONENT_SOURCE']]
+          args += ['--cli-archive',str(path),'--candidate-label',version,'--node-source',os.environ['COMPONENT_SOURCE'],
+                   '--skills-ref','e66bc94e9e7596bc19b2cf2f87db65fb80025b05']
           raise SystemExit(subprocess.call(args))
           PYTHON
       - name: Validate selected result evidence
