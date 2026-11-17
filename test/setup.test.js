@@ -114,7 +114,19 @@ else process.exit(1);
   await mkdir(join(home, '.claude', 'skills', 'doomer'), { recursive: true });
   await writeFile(join(home, '.claude', 'skills', 'doomer', 'SKILL.md'), '---\nname: doomer\n---\n');
   const otherAgent = JSON.parse((await cli(['onboard', '--agent', 'claude', '--json'])).stdout);
-  assert.match(otherAgent.codexReviewPolicy.error, /not been verified/);
+  assert.equal(otherAgent.codexReviewPolicy.policies[0].state, 'configured');
+  const checked = JSON.parse((await cli(['doctor', '--json'])).stdout);
+  assert.equal(checked.codexReviewPolicy.policies[0].state, 'configured');
+  assert.equal(checked.issues.some(issue => issue.code === 'reviewer_policy_unavailable'), false);
+  const brokenHooks = JSON.parse(await readFile(join(codex, 'hooks.json'), 'utf8'));
+  delete brokenHooks.hooks.Stop;
+  await writeFile(join(codex, 'hooks.json'), JSON.stringify(brokenHooks));
+  const broken = JSON.parse((await exec(process.execPath, [localEntry, 'doctor', '--json'], {env}).catch(error => ({stdout:error.stdout}))).stdout);
+  assert.equal(broken.ready, false);
+  const doctorRepaired = JSON.parse((await cli(['doctor', '--fix', '--json'])).stdout);
+  assert.equal(doctorRepaired.ready, true);
+  assert.equal(doctorRepaired.codexReviewPolicy.policies[0].state, 'configured');
+
 
   assert.equal((await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').length, calls.length, 'skill-first/onboard reuses installed CLI and skill');
   const approved = JSON.parse(await readFile(join(home, 'state', 'state.json')));

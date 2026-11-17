@@ -58,3 +58,10 @@ test('local skill source only applies to setup and must be an absolute checkout'
     await assert.rejects(exec(process.execPath, [entry, command, '--agent', 'claude', '--skill-source', 'relative/source']), /absolute local checkout/);
   }
 });
+
+
+test('doctor repair flag is rejected for other commands', async () => {
+  for (const command of ['install', 'update', 'uninstall']) {
+    await assert.rejects(exec(process.execPath, [entry, command, '--fix']), /supported only by doctor/);
+  }
+});

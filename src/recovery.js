@@ -26,7 +26,7 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
   }
   for (const hook of result.hooks) {
     if (hook.error) add('hook_config_invalid', `${hook.agent} settings could not be read: ${hook.error}`, null, `Fix the settings file at ${hook.file}, then run ${managerCommand('install-hooks', { agents: [hook.agent] })}.`);
-    else if (!hook.configured) add('hooks_missing', `${hook.agent} hooks need repair.`, managerCommand('install-hooks', { agents: [hook.agent] }));
+    else if (!hook.configured) add('hooks_missing', `${hook.agent} hooks need repair in ${(hook.profiles || [hook]).filter(p => !p.configured).map(p => p.file).join(', ')}.`, managerCommand('install-hooks', { agents: [hook.agent] }));
     else if (!hook.enabled) add('hooks_disabled', `${hook.agent} hooks are disabled in agent settings.`, null, `Enable hooks in ${hook.agent}, then review and trust Doomer in /hooks.`);
   }
   if (result.codexReviewPolicy?.error) add('reviewer_policy_unavailable', result.codexReviewPolicy.error, managerCommand('onboard', { agents, api }));

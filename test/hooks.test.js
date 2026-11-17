@@ -81,3 +81,42 @@ test('hooks ignore workspace overrides and remove obsolete saved roots', async t
   assert.equal(JSON.parse(original).trust, 'keep');
   assert.doesNotMatch(JSON.parse(original).hooks.UserPromptSubmit[0].hooks[0].command, /watch-root|workspace-one|workspace-two/);
 });
+
+test('existing account profiles are diagnosed and repaired without enrolling empty profiles', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'doomer-account-profiles-'));
+  const names = ['HOME', 'DOOMER_HOME', 'CODEX_HOME', 'DOOMER_DEV_INSTALL'];
+  const before = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  t.after(async () => {
+    for (const name of names) if (before[name] === undefined) delete process.env[name]; else process.env[name] = before[name];
+    await rm(home, {recursive:true, force:true});
+  });
+  Object.assign(process.env, {HOME:home, DOOMER_HOME:join(home,'state'), DOOMER_DEV_INSTALL:'0'});
+  delete process.env.CODEX_HOME;
+  const root = join(home, 'Library', 'Application Support', 'Codex Accounts', 'profiles');
+  const profile = join(root, 'account-one', 'home', 'hooks.json');
+  const empty = join(root, 'unused', 'home', 'hooks.json');
+  await mkdir(join(root, 'account-one', 'home'), {recursive:true});
+  await mkdir(join(root, 'unused', 'home'), {recursive:true});
+  const old = {disableAllHooks:true, trust:'preserve', hooks:{Stop:[{hooks:[{type:'command',command:"'/bin/doomer' agent-hook --managed-task-adapter"},{type:'command',command:'echo unrelated'}]}]}};
+  await writeFile(profile, JSON.stringify(old));
+  await writeFile(empty, '{}');
+  const {checkHooks} = await import('../src/hooks.js');
+  const diagnosis = await checkHooks('codex', '/bin/doomer');
+  assert.equal(diagnosis.configured, false);
+  assert.ok(diagnosis.profiles.some(p => p.file === profile && !p.configured));
+  assert.equal(await readFile(profile,'utf8'), JSON.stringify(old), 'diagnosis is read-only');
+  const result = await installHooks('codex','/bin/doomer');
+  assert.equal(result.profiles.length,2);
+  const repaired = JSON.parse(await readFile(profile,'utf8'));
+  assert.equal(repaired.disableAllHooks,true);
+  assert.equal(repaired.trust,'preserve');
+  assert.deepEqual(repaired.hooks.Stop[0],old.hooks.Stop[0]);
+  assert.match(repaired.hooks.UserPromptSubmit[0].hooks[0].command,/watch agent/);
+  assert.equal(await readFile(empty,'utf8'),'{}');
+  assert.equal((await installHooks('codex','/bin/doomer')).changed,false);
+  assert.equal((await checkHooks('codex','/bin/doomer')).enabled,false);
+  const state = JSON.parse(await readFile(join(home,'state','state.json'),'utf8'));
+  assert.ok(state.hookFiles.includes(profile));
+  process.env.CODEX_HOME = join(root,'account-one','home');
+  assert.equal((await installHooks('codex','/bin/doomer')).profiles.length,2,'explicit profile and default are deduplicated');
+});

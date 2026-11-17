@@ -1,6 +1,8 @@
 import { realpath } from 'node:fs/promises';
 import { paths, readState, run } from './system.js';
 import { resolveAPI } from './api.js';
+import { dirname } from 'node:path';
+import { hookFiles } from './hooks.js';
 
 export async function inspectReviewerPolicy(executable, options = {}, execute = run) {
   const state = await readState();
@@ -8,14 +10,14 @@ export async function inspectReviewerPolicy(executable, options = {}, execute = 
   if (!state.grants.some(g => g.api === api)) return { policies: [], activation: 'not_required' };
   const result = JSON.parse((await execute(executable,
     ['--api-url', api, 'watch', 'codex-policy', '--manager-home', paths().home],
-    { timeout: 30000, maxBytes: 1024 * 1024 })).toString());
+    { timeout: 30000, maxBytes: 1024 * 1024, ...(options.codexHome ? { env: { ...process.env, CODEX_HOME: options.codexHome } } : {}) })).toString());
   if (!Array.isArray(result.policies)) throw new Error('Go CLI does not support Codex reviewer policy setup; upgrade the native CLI.');
   return result;
 }
 
 // The Go CLI resolves credentials and owns policy scope, merges and declines.
 // Never infer reviewer authorization from upload approval or hook trust.
-export async function configureReviewerPolicy(executable, options, ask, execute = run) {
+async function configureSingleReviewerPolicy(executable, options, ask, execute = run) {
   const inspect = () => inspectReviewerPolicy(executable, options, execute);
   let result = await inspect();
   if (options['reviewer-policy'] && result.activation === 'not_required') throw new Error('Upload consent is required before deciding a reviewer policy; no decision was applied.');
@@ -37,8 +39,29 @@ export async function configureReviewerPolicy(executable, options, ask, execute 
     // command revalidates both consent and proposal before applying a decision.
     const command = decision === 'allow' ? policy.install_command : policy.decline_command;
     if (!Array.isArray(command) || await realpath(command[0]) !== await realpath(executable)) throw new Error('Invalid reviewer policy command.');
-    await execute(command[0], command.slice(1), { timeout: 30000, maxBytes: 1024 * 1024 });
+    await execute(command[0], command.slice(1), { timeout: 30000, maxBytes: 1024 * 1024, ...(options.codexHome ? { env: { ...process.env, CODEX_HOME: options.codexHome } } : {}) });
   }
   result = await inspect();
   return { ...result, action: 'Display pending proposals in full and obtain separate policy consent. An installed file is not proof of activation; reload the running Codex server and verify an ordinary permitted Doomer operation in that session.' };
+}
+
+export async function inspectReviewerPolicies(executable, options = {}, execute = run) {
+  const profiles = [];
+  for (const file of await hookFiles('codex')) {
+    try {
+      profiles.push({ file, ...await inspectReviewerPolicy(executable, { ...options, codexHome: dirname(file) }, execute) });
+    } catch (error) {
+      profiles.push({ file, policies: [], activation: 'unverified', error: error.message });
+    }
+  }
+  return { policies: profiles.flatMap(p => p.policies), profiles, activation: 'unverified',
+    ...(profiles.some(p => p.error) ? { error: profiles.filter(p => p.error).map(p => `${p.file}: ${p.error}`).join('; ') } : {}) };
+}
+
+export async function configureReviewerPolicy(executable, options, ask, execute = run) {
+  const profiles = [];
+  for (const file of await hookFiles('codex')) {
+    profiles.push({ file, ...await configureSingleReviewerPolicy(executable, { ...options, codexHome: dirname(file) }, ask, execute) });
+  }
+  return { policies: profiles.flatMap(p => p.policies), profiles, activation: 'unverified' };
 }

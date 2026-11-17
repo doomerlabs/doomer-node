@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { configureReviewerPolicy } from '../src/reviewer-policy.js';
+import { configureReviewerPolicy, inspectReviewerPolicies } from '../src/reviewer-policy.js';
 
 test('policy consent is separate, uses Go proposal commands, and preserves explicit declines', async t => {
   const home = await mkdtemp(join(tmpdir(), 'policy-'));
@@ -31,4 +31,31 @@ test('policy consent is separate, uses Go proposal commands, and preserves expli
   assert.equal(calls.filter(args=>args.includes('--decision')).length,count);
   await writeFile(join(home,'state.json'), JSON.stringify({grants:[]}));
   await assert.rejects(configureReviewerPolicy(process.execPath,{'reviewer-policy':'allow','api-url':'https://doomer.ai/api'},ask,execute), /no decision was applied/);
+});
+
+
+test('policy diagnostics inspect each existing account profile without accepting decisions', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'profile-policy-'));
+  const keys = ['HOME','DOOMER_HOME','CODEX_HOME'];
+  const before = Object.fromEntries(keys.map(key => [key,process.env[key]]));
+  t.after(async () => {
+    for (const key of keys) if (before[key] === undefined) delete process.env[key]; else process.env[key] = before[key];
+    await rm(home,{recursive:true,force:true});
+  });
+  process.env.HOME = home;
+  process.env.DOOMER_HOME = home;
+  delete process.env.CODEX_HOME;
+  await writeFile(join(home,'state.json'),JSON.stringify({api:'https://doomer.ai/api',grants:[{api:'https://doomer.ai/api'}]}));
+  const profile = join(home,'Library','Application Support','Codex Accounts','profiles','one','home');
+  await mkdir(profile,{recursive:true});
+  await writeFile(join(profile,'hooks.json'),JSON.stringify({hooks:{Stop:[{hooks:[{command:'doomer agent-hook --managed-task-adapter'}]}]}}));
+  const homes=[];
+  const result=await inspectReviewerPolicies(process.execPath,{},async (_exe,args,options) => {
+    assert.equal(args.includes('--decision'),false);
+    homes.push(options.env.CODEX_HOME);
+    return Buffer.from(JSON.stringify({policies:[{state:'configured'}]}));
+  });
+  assert.deepEqual(homes,[join(home,'.codex'),profile]);
+  assert.equal(result.policies.length,2);
+  assert.equal(result.error,undefined);
 });
