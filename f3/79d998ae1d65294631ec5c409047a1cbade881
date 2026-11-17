@@ -1,0 +1,18 @@
+src/setup.js
+  h_aa44c3b5b60dec 206-208
+test/cli.test.js
+  h_aa44c3b5b60dec 57-59
+test/setup.test.js
+  h_aa44c3b5b60dec 68-69,74,173-176,179-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f379d998ae1d65294631ec5c409047a1cbade881",
+  "prompts": {},
+  "humans": {
+    "h_aa44c3b5b60dec": {
+      "author": "Marc Campbell <marc.e.campbell@gmail.com>"
+    }
+  }
+}
