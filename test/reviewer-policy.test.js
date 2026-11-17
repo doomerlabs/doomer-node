@@ -70,4 +70,10 @@ test('policy diagnostics inspect each existing account profile without accepting
   assert.deepEqual(decisions,[]);
   await configureReviewerPolicy(process.execPath,{'api-url':'https://doomer.ai/api','reviewer-policy':'allow','reviewer-policy-proposal':'profile-digest'},ask,execute);
   assert.deepEqual(decisions,[profile], 'explicit consent targets only the matching profile');
+  const partial=await configureReviewerPolicy(process.execPath,{'api-url':'https://doomer.ai/api','reviewer-policy':'allow','reviewer-policy-proposal':'profile-digest'},ask,async (exe,args,options) => {
+    if (options.env.CODEX_HOME !== profile) throw new Error('other profile unavailable');
+    return execute(exe,args,options);
+  });
+  assert.deepEqual(decisions,[profile,profile]);
+  assert.match(partial.error,/other profile unavailable/);
 });

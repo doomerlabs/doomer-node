@@ -80,5 +80,11 @@ test('doctor formatting labels both versions and supports plain text and color',
 
 test('doctor labels disabled profiles before missing hooks', () => {
   const output=formatDoctor({cli:true,ready:false,nativeStatus:'available',nativeVersion:'doomer dev',commandStatus:'available',globalCommand:'/bin/doomer',onPath:true,skill:'installed',automaticReviews:true,hooks:[{agent:'codex',configured:false,enabled:false,profiles:[{file:'/account/hooks.json',configured:false,enabled:false}]}],next:'Review settings.'},{color:false});
-  assert.match(output,/\/account\/hooks.json: disabled/);
+  assert.match(output,/\/account\/hooks.json: disabled; hooks need repair/);
+});
+
+
+test('profile errors remain visible when hooks are disabled', () => {
+  const output=formatDoctor({cli:true,ready:false,nativeStatus:'available',nativeVersion:'doomer dev',commandStatus:'available',globalCommand:'/bin/doomer',onPath:true,skill:'installed',automaticReviews:true,hooks:[{agent:'codex',configured:false,enabled:false,profiles:[{file:'/account/hooks.json',configured:false,enabled:false,error:'Invalid JSON'}]}],next:'Review settings.'},{color:false});
+  assert.match(output,/\/account\/hooks.json: Invalid JSON/);
 });

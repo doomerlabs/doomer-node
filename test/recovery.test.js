@@ -132,3 +132,10 @@ test('invalid profile diagnostics name every affected file', () => {
   assert.match(errors[0].instruction,/\/one\/hooks.json/);
   assert.match(errors[1].instruction,/\/two\/hooks.json/);
 });
+
+
+test('aggregate errors retain a diagnostic if no profile supplied an error', () => {
+  const result=installationGuidance({...installed(),hooks:[{agent:'codex',file:'/default/hooks.json',error:'unreadable',profiles:[{file:'/one/hooks.json',configured:false}]}]},{uploadApproved:true});
+  assert.equal(result.issues.filter(i=>i.code==='hook_config_invalid').length,1);
+  assert.match(result.issues[0].message,/unreadable/);
+});
