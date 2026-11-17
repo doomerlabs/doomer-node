@@ -65,7 +65,7 @@ if (args[0] === 'pack') {
 } else if (args[0] === 'exec') {
   const checkout = args[args.indexOf('add') + 1];
   if (!(await stat(checkout)).isDirectory()) throw new Error('missing checkout');
-  const actual = execFileSync('git', ['-C', checkout, 'rev-parse', 'HEAD'], {encoding:'utf8'}).trim();
+  const actual = checkout === process.env.LOCAL_SKILL_SOURCE ? process.env.EXPECTED_SKILL_REVISION : execFileSync('git', ['-C', checkout, 'rev-parse', 'HEAD'], {encoding:'utf8'}).trim();
   if (actual !== process.env.EXPECTED_SKILL_REVISION) throw new Error('wrong skill revision');
   if (process.env.FAIL_SKILL_INSTALL === '1') throw new Error('simulated skills failure');
   console.log('skills install progress');
@@ -166,6 +166,13 @@ else process.exit(1);
   const updatedHooks = JSON.parse(await readFile(join(codex, 'hooks.json')));
   assert.equal(updatedHooks.hooks.Stop[0].hooks[0].command, hooks.hooks.Stop[1].hooks[0].command, 'updates retain the stable hook command');
   assert.ok(!JSON.stringify(updatedHooks).includes(env.DOOMER_HOOK_ROOT));
+  const localSkills = join(home, 'local-skills');
+  await mkdir(join(localSkills, 'skills', 'doomer'), {recursive:true});
+  await writeFile(join(localSkills, 'skills', 'doomer', 'SKILL.md'), '---\nname: doomer\n---\nlocal draft');
+  env.LOCAL_SKILL_SOURCE = localSkills;
+  await cli(['onboard', '--agent', 'codex', '--skill-source', localSkills, '--json']);
+  const localCalls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.ok(localCalls.some(args => args[0] === 'exec' && args[args.indexOf('add') + 1] === localSkills), 'explicit local skill refreshes an existing installation');
   env.FAIL_SKILL_INSTALL = '1';
   await assert.rejects(cli(['install', '--agent', 'codex', '--json']));
   const failedCalls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);

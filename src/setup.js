@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
-import { join, resolve, dirname, delimiter } from 'node:path';
+import { join, resolve, dirname, delimiter, isAbsolute } from 'node:path';
 import { mkdir, mkdtemp, rm, lstat, stat, access, readFile, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
@@ -116,7 +116,7 @@ export async function installCLI({ from, version } = {}) {
   });
 }
 
-export async function installSkill(selected) {
+export async function installSkill(selected, source) {
   // npm exec launches the same official skills CLI as npx skills add; its own
   // telemetry supplies skills.sh counts. Respect the user's telemetry settings.
   await withSkillSource(async source => {
@@ -124,7 +124,7 @@ export async function installSkill(selected) {
     if (selected.length) args.push('--agent', ...selected.map(a => a === 'claude' ? 'claude-code' : a));
     else args.push('--agent', 'codex'); // Store the global skill without installing any hooks.
     await npm(args, { stdio: ['inherit', 2, 2] });
-  });
+  }, source);
   await changeState(s => { s.skillInstalledAt = new Date().toISOString(); s.skillPaths=[...new Set([...(s.skillPaths||[]),...globalSkillPaths()])]; });
 }
 
@@ -188,6 +188,11 @@ export async function grant(api) {
 
 export async function setup(options, { forceSkill = true } = {}) {
   validateCLIVersion(options['cli-version']);
+  if (options['skill-source']) {
+    if (!isAbsolute(options['skill-source']) || !await exists(join(options['skill-source'], 'skills', 'doomer', 'SKILL.md'))) {
+      throw new Error('--skill-source must be an absolute local checkout containing skills/doomer/SKILL.md.');
+    }
+  }
   resolveAPI(options['api-url'], (await readState()).api);
   const selected = await selectAgents(options);
   if (options['claude-review-permission'] && !selected.includes('claude')) throw new Error('--claude-review-permission requires selecting claude.');
@@ -197,9 +202,9 @@ export async function setup(options, { forceSkill = true } = {}) {
   const retry = managerCommand('onboard', { agents: selected, api: options['api-url'], cliVersion: options['cli-version'] });
   const installed = await setupStep('Installing the manager', retry, () => installCLI({ from: options.from }));
   const native = await setupStep('Installing the Go CLI', retry, () => installNative({ version: options['cli-version'] }));
-  if (forceSkill || !await skillPresent(selected)) {
+  if (forceSkill || options['skill-source'] || !await skillPresent(selected)) {
     console.error('Adding the doomer skill through the official skills CLI…');
-    await setupStep('Installing the skill', retry, () => installSkill(selected));
+    await setupStep('Installing the skill', retry, () => installSkill(selected, options['skill-source']));
   }
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
   await setupStep('Configuring agent hooks', retry, () => configure(selected, native.executable, options));
