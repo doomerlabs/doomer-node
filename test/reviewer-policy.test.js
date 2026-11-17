@@ -76,4 +76,5 @@ test('policy diagnostics inspect each existing account profile without accepting
   });
   assert.deepEqual(decisions,[profile,profile]);
   assert.match(partial.error,/other profile unavailable/);
+  await assert.rejects(configureReviewerPolicy(process.execPath,{'api-url':'https://doomer.ai/api','reviewer-policy':'allow','reviewer-policy-proposal':'profile-digest'},ask,async () => {throw new Error('policy inspection unavailable');}),/policy inspection unavailable/);
 });

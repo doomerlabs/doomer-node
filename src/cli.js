@@ -24,7 +24,7 @@ Usage: npx @doomerlabs/doomer <command>
 
 Setup options:
   --agent claude,codex         Agents to configure (interactive when omitted)
-  --no-hooks                   Install for standalone reviews
+  --no-hooks                   Install without automatic review hooks
   --approve-uploads            Approve all Doomer review uploads to this service
   --claude-review-permission allow|decline  Decide scoped Claude review permissions
   --reviewer-policy allow|decline  Decide the separately disclosed Codex policy

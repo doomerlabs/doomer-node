@@ -87,6 +87,7 @@ test('standalone setup offers opt-in automatic reviews without granting consent 
       const text = format({ ...state, ...guidance }, { color: false });
       assert.ok(text.includes('Enable automatic reviews:\n' + action.command));
       assert.match(text, /review upload permission/);
+      assert.doesNotMatch(text, /set up for manual reviews/);
     }
   }
   assert.equal(installationGuidance(installed(), { uploadApproved: true }).enableAutomaticReviews, undefined);

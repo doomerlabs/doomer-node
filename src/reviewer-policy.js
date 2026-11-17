@@ -68,7 +68,7 @@ export async function configureReviewerPolicy(executable, options, ask, execute 
     if (inspected.profiles.every(p => p.activation === 'not_required')) throw new Error('Upload consent is required before deciding a reviewer policy; no decision was applied.');
     targets = inspected.profiles.filter(p => !p.error && p.policies.some(policy =>
       policy.install_command?.[policy.install_command.indexOf('--proposal') + 1] === options['reviewer-policy-proposal'])).map(p => p.file);
-    if (!targets.length) throw new Error('Reviewer policy changed or has not been reviewed. Display the current proposal and pass its --reviewer-policy-proposal digest with the decision.');
+    if (!targets.length) throw new Error(inspected.error || 'Reviewer policy changed or has not been reviewed. Display the current proposal and pass its --reviewer-policy-proposal digest with the decision.');
   }
   for (const file of targets) {
     await configureSingleReviewerPolicy(executable, { ...options, codexHome: dirname(file) }, ask, execute);
