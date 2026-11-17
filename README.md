@@ -275,7 +275,7 @@ npx @doomerlabs/doomer@beta install
 ```
 
 The npm installer version and Go CLI version are independent. This beta
-installer pins Go CLI `2026.11.15-beta.1` by default, so no CLI version flag is
+installer pins Go CLI `2026.11.16.1-beta.1` by default, so no CLI version flag is
 needed. Reinstalling or updating this package retains its tested Go CLI version.
 Explicit local development binaries continue to override the published default.
 
@@ -330,3 +330,9 @@ declines survive updates; only an explicit new decision changes them. Uninstall
 removes only rules added by this installation. Existing user rules are preserved.
 The opt-in also adds a scoped `autoMode.allow` explanation for these operations,
 retaining `$defaults` and existing rules. Managed hard-deny rules still apply.
+
+## Iterate from source on another machine
+
+[Local iteration](docs/local-iteration.md) describes bundling all three local checkouts, leaving production, installing the bundled Node manager/CLI/skill, and logging in to a development service without publishing Doomer to npm.
+
+`install` and `onboard` accept `--skill-source /absolute/path/to/skills` to install a local checkout containing `skills/doomer/SKILL.md` through the official skills CLI. This is an explicit per-run override; ordinary installs and updates retain the reviewed production skill pin.

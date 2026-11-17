@@ -29,6 +29,7 @@ Setup options:
   --claude-review-permission allow|decline  Decide scoped Claude review permissions
   --reviewer-policy allow|decline  Decide the separately disclosed Codex policy
   --reviewer-policy-proposal HASH  Digest from that exact proposal
+  --skill-source PATH         Install the doomer skill from a local source checkout
   --from PATH.tgz              Install a local npm tarball before publication
   --json                       Machine-readable result
   --api-url URL                Service (or DOOMER_API_URL; default: https://doomer.ai/api)
@@ -42,7 +43,7 @@ export async function main(args) {
     agent: { type: 'string' },
     'claude-review-permission': { type: 'string' }, 'reviewer-policy': { type: 'string' }, 'reviewer-policy-proposal': { type: 'string' },
     'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
-    json: { type: 'boolean' }, from: { type: 'string' }, 'cli-version': { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
+    'skill-source': { type: 'string' }, json: { type: 'boolean' }, from: { type: 'string' }, 'cli-version': { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
   } });
   if (options.home) process.env[developmentInstall() ? 'DOOMER_DEV_HOME' : 'DOOMER_HOME'] = options.home;
   if (options.version) { console.log(metadata.version); return 0; }
@@ -53,6 +54,7 @@ export async function main(args) {
   if (Object.hasOwn(options, 'reviewer-policy-proposal') && (!['install', 'onboard', 'update'].includes(command) || !options['reviewer-policy'])) throw new Error('--reviewer-policy-proposal requires a reviewer-policy decision with install, onboard, or update.');
   if (Object.hasOwn(options, 'check') && command !== 'upgrade') throw new Error('--check is supported only by upgrade.');
   if (Object.hasOwn(options, 'cli-version') && !['install', 'onboard'].includes(command)) throw new Error('--cli-version is supported only by install and onboard.');
+  if (Object.hasOwn(options, 'skill-source') && !['install', 'onboard'].includes(command)) throw new Error('--skill-source is supported only by install and onboard.');
   if (extra.length) throw new Error('Unexpected command arguments. Run npx @doomerlabs/doomer --help.');
   switch (command) {
     case 'install':
