@@ -20,7 +20,16 @@ test('configured hooks do not imply upload consent or activation', () => {
   assert.match(text, /set up for Codex/);
   assert.match(text, /open \/hooks/);
   assert.match(text, /start a new session/);
-  assert.match(text, /completed review confirms activation/);
+  assert.match(text, /completed review confirms setup/);
+  const optionalPath = installationGuidance({ ...state, onPath: false }, { uploadApproved: true });
+  const both = formatSetup({ ...state, ...optionalPath, agents: ['claude', 'codex'], claudeReviewPermission: 'allow', codexReload: { reloaded: true } });
+  assert.match(both, /1\. Open the repository you want reviewed in Claude Code or Codex\./);
+  assert.match(both, /2\. In that session, open \/hooks/);
+  assert.match(both, /3\. Ask your agent to make a small code change\./);
+  assert.doesNotMatch(both, /Codex: start a new session/);
+  assert.ok(both.indexOf('Optional for running') > both.indexOf('3. Ask your agent'));
+  assert.doesNotMatch(formatSetup({ ...state, ...result }), /Get your first review/);
+
 });
 
 test('repair guidance distinguishes missing hooks, disabled hooks and invalid settings', () => {
@@ -117,7 +126,7 @@ test('mixed policy states preserve declines and offer repair for missing scopes'
  assert.ok(result.issues.some(i=>i.code==='reviewer_policy_declined'&&!i.command))
  assert.ok(result.issues.some(i=>i.code==='reviewer_policy_missing'&&i.command.includes('onboard')))
  assert.equal(result.reviewerAuthorization.policy, 'missing_or_outdated')
- assert.match(result.issues.find(i=>i.code==='reviewer_policy_missing').instruction, /finding decisions, agreement flags, and repository-specific explanations/)
+ assert.match(result.issues.find(i=>i.code==='reviewer_policy_missing').instruction, /View exact changes.*--json/)
  assert.doesNotMatch(formatSetup({...installed(),...result}),/finding decisions and explanations approved/)
 })
 

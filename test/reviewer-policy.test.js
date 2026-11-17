@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { configureReviewerPolicy, inspectReviewerPolicies } from '../src/reviewer-policy.js';
+import { configureReviewerPolicy, inspectReviewerPolicies, removeReviewerPolicies } from '../src/reviewer-policy.js';
 
 test('policy consent is separate, uses Go proposal commands, and preserves explicit declines', async t => {
   const home = await mkdtemp(join(tmpdir(), 'policy-'));
@@ -79,4 +79,22 @@ test('policy diagnostics inspect each existing account profile without accepting
   assert.deepEqual(decisions,[profile,profile]);
   assert.match(partial.error,/other profile unavailable/);
   await assert.rejects(configureReviewerPolicy(process.execPath,{'api-url':'https://doomer.ai/api','reviewer-policy':'allow','reviewer-policy-proposal':'profile-digest'},ask,async () => {throw new Error('policy inspection unavailable');}),/policy inspection unavailable/);
+});
+
+
+test('uninstall removes Codex scopes offline through the recorded native CLI', async t => {
+  const home=await mkdtemp(join(tmpdir(),'remove-policy-'));
+  const keys=['HOME','DOOMER_HOME','CODEX_HOME','DOOMER_DEV_HOME'];
+  const before=Object.fromEntries(keys.map(key=>[key,process.env[key]]));
+  t.after(async()=>{for(const key of keys)if(before[key]===undefined)delete process.env[key];else process.env[key]=before[key];await rm(home,{recursive:true,force:true});});
+  process.env.HOME=home;process.env.DOOMER_HOME=join(home,'manager');process.env.CODEX_HOME=join(home,'.codex');process.env.DOOMER_DEV_HOME=join(home,'dev');
+  await mkdir(process.env.CODEX_HOME,{recursive:true});
+  await writeFile(join(process.env.CODEX_HOME,'config.toml'),'# Doomer repository review authorization');
+  const state={native:{path:process.execPath},hookFiles:[join(process.env.CODEX_HOME,'hooks.json')],credentialDirs:{'https://doomer.ai/api':'/prod'}};
+  const calls=[];
+  const result=await removeReviewerPolicies(state,async(exe,args,options)=>{calls.push({exe,args,options});return Buffer.from('{"removed":true,"changed":true}');});
+  assert.equal(result.length,1);assert.equal(calls[0].exe,process.execPath);
+  assert.deepEqual(calls[0].args,['watch','codex-policy','--remove','--manager-home',process.env.DOOMER_HOME]);
+  assert.equal(calls[0].options.env.CODEX_HOME,process.env.CODEX_HOME);
+  await assert.rejects(removeReviewerPolicies(state,async()=>Buffer.from('{}')),/did not confirm/);
 });

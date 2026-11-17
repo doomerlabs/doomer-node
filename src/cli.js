@@ -23,7 +23,7 @@ Usage: npx @doomerlabs/doomer <command>
   revoke                       Revoke saved upload approval for this service
 
 Setup options:
-  --agent claude,codex         Agents to configure (interactive when omitted)
+  --agent claude,codex         Agents to configure (picker or detected defaults when omitted)
   --no-hooks                   Install without automatic review hooks
   --approve-uploads            Approve all Doomer review uploads to this service
   --claude-review-permission allow|decline  Decide scoped Claude review permissions
@@ -61,6 +61,7 @@ export async function main(args) {
     case 'install':
     case 'onboard': {
       const result = await setup(options, { forceSkill: command === 'install' });
+      if (result === null) return 0;
       if (options.json) console.log(JSON.stringify(result, null, 2));
       else console.log(formatSetup(result));
       return result.ready ? 0 : 1;
@@ -73,6 +74,11 @@ export async function main(args) {
     }
     case 'install-hooks': {
       const selected = await selectAgents(options);
+      if (selected === null) return 0;
+      if (!selected.length) {
+        if (!options.json) console.log('No agent hooks selected.');
+        return 0;
+      }
       const native = await installNative();
       if (!native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
       for (const agent of selected) {
@@ -103,7 +109,9 @@ export async function main(args) {
       const result=await uninstall();
       if(options.json)console.log(JSON.stringify(result,null,2));
       else {
-        console.log('Doomer uninstalled. Managed hooks, skills and local installation data removed.');
+        console.log('Doomer uninstalled. Owned hooks, permissions, skills and local installation data removed.');
+        if(result.preservedSharedSkill)console.log('Preserved skills still used by another installation.');
+        if(result.codexPolicies?.some(policy=>policy.preserved_policy))console.log('Preserved shared or customized Codex review policy.');
         if(result.removedExecutable)console.log(`Removed ${result.removedExecutable}`);
         if(result.preservedExecutable)console.log(`Preserved replacement executable: ${result.preservedExecutable}`);
         if(result.codexReload)console.log(result.codexReload.reloaded ? 'Codex reloaded the removed hooks without restarting.' : reloadMessage(result.codexReload));

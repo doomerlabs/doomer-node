@@ -38,7 +38,7 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
     add('reviewer_policy_declined', 'Codex reviewer authorization was declined.', null, 'The saved decline is preserved. Revisit that decision explicitly before enabling automatic review authorization.');
   }
   if (!result.codexReviewPolicy?.error && result.codexReviewPolicy?.policies.some(p => !['configured', 'declined'].includes(p.state))) {
-    add('reviewer_policy_missing', 'Codex reviewer authorization needs a separate decision.', managerCommand('onboard', { agents, api }), 'Display and review the returned policy for finding decisions, agreement flags, and repository-specific explanations before accepting it. Upload consent and hook trust remain separate.');
+    add('reviewer_policy_missing', 'Codex reviewer authorization needs a separate decision.', managerCommand('onboard', { agents, api }), 'Use “View exact changes” to inspect the policy before allowing it. The full proposal is also available with --json.');
   }
   if (!uploadApproved) add('uploads_not_approved', 'Source uploads are not approved for this service. Automatic reviews will not run.', managerCommand('onboard', { agents, api }), 'Review the upload prompt and approve only if you want reviews. Declining keeps uploads off.');
   if (!result.onPath && result.commandInstalled) add('command_not_on_path', 'Your shell does not select this Doomer installation.', null, `Add ${result.globalCommand.slice(0, Math.max(result.globalCommand.lastIndexOf('/'), result.globalCommand.lastIndexOf('\\')))} to the front of PATH, or use ${shellQuote(result.globalCommand)} directly.`);

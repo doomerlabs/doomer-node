@@ -35,7 +35,7 @@ Setup selects Claude Code, Codex, both, or standalone reviews, then:
 5. Offers global source-upload approval separately: “Allow Doomer reviews to
    upload source snapshots to Doomer (https://doomer.ai)?”
 
-After setup, the summary identifies the selected agents and whether source uploads are approved. Open `/hooks` in each agent to review and trust Doomer. Start a new session if the hooks have not loaded, then give the agent a small coding task. Doomer reviews the changes automatically; a completed review verifies activation. Declining uploads keeps automatic reviews off without undoing installation.
+After setup, the summary identifies the selected agents and whether source uploads are approved. Open `/hooks` in each agent to review and trust Doomer. Start a new session if the hooks have not loaded, then give the agent a small coding task. Doomer reviews the changes automatically; a completed review verifies activation. Declining upload approval exits setup for automatic reviews.
 
 The installer also downloads the Go CLI from the official stable channel and
 verifies its archive checksum. It installs versioned executables beside a `~/.local/bin/doomer` symlink, for
@@ -53,12 +53,26 @@ Automatic reviews require a Go CLI with the foreground `watch` command and
 reports automatic reviews unavailable. Use a compatible released CLI, or an
 explicitly selected candidate for authorized source testing.
 
-Explicit agent selection supports noninteractive installation:
+In a terminal, install and onboard display a checkbox picker. Detected agents
+are checked on the first run, and later runs preselect the previous selection.
+Use the arrow keys to move, Space to toggle, and Enter to continue. Clear all
+checkboxes to install without automatic review hooks.
+
+Without a terminal, setup uses the previous selection or detected agents. If
+neither is available, specify an agent or use `--no-hooks`. Setup with hooks
+requires existing upload approval or an explicit `--approve-uploads` flag.
+Use explicit flags to make scripted installs independent of detection:
 
 ```sh
-npx @doomerlabs/doomer install --agent claude,codex
+npx @doomerlabs/doomer install --agent claude,codex --approve-uploads
 npx @doomerlabs/doomer install --no-hooks
 ```
+
+For interactive setup, **Review permissions in browser** opens the approval
+page and signs you in when you allow reviews. The terminal also prints a link
+you can open on another machine. **Yes, enable reviews here** approves uploads
+without a browser. **No, exit setup** cancels onboarding. Native reviewer
+permissions remain a separate decision.
 
 A human can add `--approve-uploads` to authorize all Doomer review uploads to
 the configured service, across repositories and agents. Agents must not supply approval flags
@@ -177,8 +191,17 @@ with `npm pack` and run `npx --yes ./doomerlabs-doomer-VERSION.tgz uninstall`.
 
 Uninstall disables the managed hooks, stops its native watchers, removes the
 global `doomer` link when it still points to a managed executable, removes the
-new global `doomer` skill, and deletes the private runtimes, source snapshots,
-credentials, and local installation state. It does not remove hosted reviews,
+selected installation's `doomer` skills, and deletes its private runtimes,
+source snapshots, saved upload grants, and local installation state. Skills
+actually shared with another installation are retained; isolated development
+skills and hooks are left alone. It removes manager-owned Claude permission
+rules and exact recognized or recorded Codex authorization blocks. Customized
+or shared Codex policy is preserved and reported. Permission-cleanup failures
+retain the installation state and CLI so cleanup can be retried.
+
+Credentials inside the manager home are deleted with that home. External login
+credentials (for example, a separate `DOOMER_CONFIG_DIR`) are preserved; uninstall
+does not revoke account sessions on the server. It does not remove hosted reviews,
 the old `doomer-review` skill, unrelated agent settings, or recovery backups.
 If you replaced the global command yourself, uninstall reports and preserves
 that replacement. Uninstall reloads removed hooks in a reachable local Codex

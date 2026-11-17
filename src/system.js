@@ -11,6 +11,8 @@ export const metadata = JSON.parse(await readFile(join(packageRoot, 'package.jso
 export const hash = value => createHash('sha256').update(value).digest('hex');
 export const quote = value => `'${String(value).replaceAll("'", "'\"'\"'")}'`;
 
+export const interactiveTerminal = () => Boolean(process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY);
+
 export const developmentInstall = (env = process.env) => env.DOOMER_DEV_INSTALL === '1';
 
 export function paths(env = process.env) {
