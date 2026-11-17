@@ -45,7 +45,7 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
   const activation = agents.length ? 'unverified' : 'not_required';
   const next = issues.length ? `${issues[0].message} ${issues[0].command ? `Run: ${issues[0].command}. ` : ''}${issues[0].instruction || ''}`.trim()
     : agents.length ? 'Open /hooks in your agent and review and trust the Doomer hooks. Start a new session if needed, then give the agent a small coding task. A completed review verifies activation.'
-    : `Run ${shellQuote(result.globalCommand)} review for a manual review. This command authorizes uploading the repository source.`;
+    : 'Standalone Quick review is not supported. Configure a coding-agent hook to enable Quick review.';
   const enableAutomaticReviews = agents.length ? undefined : {
     command: managerCommand('onboard', { api }),
     instruction: 'Choose Codex, Claude Code, or both, review upload permission, then review and trust the hooks in your agent.',
@@ -60,7 +60,7 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
       : policyStates.includes('declined') ? 'declined' : 'unverified',
     activation: agents.includes('codex') ? 'unverified' : 'not_required',
   };
-  return { issues, uploadApproved, activation, reviewerAuthorization, reviewConfigured: result.ready && uploadApproved && !issues.some(i => i.code.startsWith('reviewer_policy_')), next, enableAutomaticReviews };
+  return { issues, uploadApproved, activation, reviewerAuthorization, reviewConfigured: agents.length > 0 && result.ready && uploadApproved && !issues.some(i => i.code.startsWith('reviewer_policy_')), next, enableAutomaticReviews };
 }
 
 export class SetupError extends Error {

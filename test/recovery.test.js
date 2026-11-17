@@ -81,6 +81,8 @@ test('standalone setup offers opt-in automatic reviews without granting consent 
     assert.match(action.command, /--api-url https:\/\/service.example\/api/);
     assert.doesNotMatch(action.command, /--approve-uploads|--agent|--no-hooks/);
     assert.equal(guidance.activation, 'not_required');
+    assert.equal(guidance.reviewConfigured, false);
+    if (uploadApproved) assert.match(guidance.next, /Standalone Quick review is not supported/);
     for (const format of [formatSetup, formatDoctor]) {
       const text = format({ ...state, ...guidance }, { color: false });
       assert.ok(text.includes('Enable automatic reviews:\n' + action.command));
