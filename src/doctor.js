@@ -69,7 +69,7 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
   for (const hook of result.hooks) {
     const configured = hook.configured && hook.enabled;
     const name = hook.agent === 'claude' ? 'Claude Code' : 'Codex';
-    for (const profile of hook.profiles || []) rows.push(`                 ${profile.file}: ${profile.configured ? (profile.enabled ? 'configured; activation unverified' : 'disabled') : profile.error || 'hooks need repair'}`);
+    for (const profile of hook.profiles || []) rows.push(`                 ${profile.file}: ${profile.enabled === false ? 'disabled' : profile.configured ? 'configured; activation unverified' : profile.error || 'hooks need repair'}`);
     row(name, configured ? 'Hooks configured; activation unverified' : hook.error || (hook.enabled === false ? 'Hooks disabled' : 'Hooks need repair'), configured ? 'ok' : 'error');
   }
   if (result.hooks.some(h => h.agent === 'claude')) row('Claude review', result.claudeReviewPermission || 'unverified', result.claudeReviewPermission === 'allow' ? 'ok' : 'warning');

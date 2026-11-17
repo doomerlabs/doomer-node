@@ -123,3 +123,12 @@ test('policy inspection errors do not infer missing scopes',()=>{
  assert.equal(result.reviewerAuthorization.policy, 'unverified')
  assert.deepEqual(result.issues.map(i=>i.code), ['reviewer_policy_unavailable'])
 })
+
+
+test('invalid profile diagnostics name every affected file', () => {
+  const result=installationGuidance({...installed(),hooks:[{agent:'codex',file:'/default/hooks.json',error:'invalid',profiles:[{file:'/one/hooks.json',error:'one invalid'},{file:'/two/hooks.json',error:'two invalid'}]}]},{uploadApproved:true});
+  const errors=result.issues.filter(i=>i.code==='hook_config_invalid');
+  assert.equal(errors.length,2);
+  assert.match(errors[0].instruction,/\/one\/hooks.json/);
+  assert.match(errors[1].instruction,/\/two\/hooks.json/);
+});

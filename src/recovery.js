@@ -25,7 +25,9 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
     } else add('cli_incompatible', 'This CLI does not support automatic review hooks.', managerCommand('update'));
   }
   for (const hook of result.hooks) {
-    if (hook.error) add('hook_config_invalid', `${hook.agent} settings could not be read: ${hook.error}`, null, `Fix the settings file at ${hook.file}, then run ${managerCommand('install-hooks', { agents: [hook.agent] })}.`);
+    if (hook.error) {
+      for (const profile of (hook.profiles || [hook]).filter(p => p.error)) add('hook_config_invalid', `${hook.agent} settings could not be read at ${profile.file}: ${profile.error}`, null, `Fix the settings file at ${profile.file}, then run ${managerCommand('install-hooks', { agents: [hook.agent] })}.`);
+    }
     else if (!hook.configured) add('hooks_missing', `${hook.agent} hooks need repair in ${(hook.profiles || [hook]).filter(p => !p.configured).map(p => p.file).join(', ')}.`, managerCommand('install-hooks', { agents: [hook.agent] }));
     else if (!hook.enabled) add('hooks_disabled', `${hook.agent} hooks are disabled in agent settings.`, null, `Enable hooks in ${hook.agent}, then review and trust Doomer in /hooks.`);
   }

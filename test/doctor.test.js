@@ -76,3 +76,9 @@ test('doctor formatting labels both versions and supports plain text and color',
   assert.doesNotMatch(plain, /\u001b\[/);
   assert.match(formatDoctor(result, { color: true }), /\u001b\[/);
 });
+
+
+test('doctor labels disabled profiles before missing hooks', () => {
+  const output=formatDoctor({cli:true,ready:false,nativeStatus:'available',nativeVersion:'doomer dev',commandStatus:'available',globalCommand:'/bin/doomer',onPath:true,skill:'installed',automaticReviews:true,hooks:[{agent:'codex',configured:false,enabled:false,profiles:[{file:'/account/hooks.json',configured:false,enabled:false}]}],next:'Review settings.'},{color:false});
+  assert.match(output,/\/account\/hooks.json: disabled/);
+});

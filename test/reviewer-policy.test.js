@@ -58,4 +58,16 @@ test('policy diagnostics inspect each existing account profile without accepting
   assert.deepEqual(homes,[join(home,'.codex'),profile]);
   assert.equal(result.policies.length,2);
   assert.equal(result.error,undefined);
+  const decisions=[];
+  const execute=async (_exe,args,options) => {
+    const current=options.env.CODEX_HOME;
+    if (args.includes('--decision')) decisions.push(current);
+    const digest=current===profile ? 'profile-digest' : 'default-digest';
+    return Buffer.from(JSON.stringify({policies:[{state:'missing',extra_policy:'scoped',changes:[],install_command:[process.execPath,'--proposal',digest,'--decision','allow']}]}));
+  };
+  const ask=()=>{throw new Error('must not prompt');};
+  await assert.rejects(configureReviewerPolicy(process.execPath,{'api-url':'https://doomer.ai/api','reviewer-policy':'allow','reviewer-policy-proposal':'stale'},ask,execute),/changed/);
+  assert.deepEqual(decisions,[]);
+  await configureReviewerPolicy(process.execPath,{'api-url':'https://doomer.ai/api','reviewer-policy':'allow','reviewer-policy-proposal':'profile-digest'},ask,execute);
+  assert.deepEqual(decisions,[profile], 'explicit consent targets only the matching profile');
 });

@@ -77,7 +77,7 @@ export async function main(args) {
       if (!native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
       for (const agent of selected) {
         const result = await installHooks(agent, native.executable);
-        console.log(`${agent}: ${result.changed ? 'installed' : 'already configured'} (${result.file})`);
+        for (const profile of result.profiles) console.log(`${agent}: ${profile.changed ? 'installed' : 'already configured'} (${profile.file})`);
       }
       await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; });
       if(selected.includes('codex')) console.log(reloadMessage(await reloadCodexHooks()));

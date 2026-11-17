@@ -59,9 +59,20 @@ export async function inspectReviewerPolicies(executable, options = {}, execute 
 }
 
 export async function configureReviewerPolicy(executable, options, ask, execute = run) {
-  const profiles = [];
-  for (const file of await hookFiles('codex')) {
-    profiles.push({ file, ...await configureSingleReviewerPolicy(executable, { ...options, codexHome: dirname(file) }, ask, execute) });
+  const files = await hookFiles('codex');
+  // A supplied digest authorizes one exact proposal, not every discovered home.
+  // Inspect all homes before applying any decision so a stale digest changes none.
+  let targets = files;
+  if (options['reviewer-policy']) {
+    const inspected = await inspectReviewerPolicies(executable, options, execute);
+    if (inspected.error) throw new Error(inspected.error);
+    if (inspected.profiles.every(p => p.activation === 'not_required')) throw new Error('Upload consent is required before deciding a reviewer policy; no decision was applied.');
+    targets = inspected.profiles.filter(p => p.policies.some(policy =>
+      policy.install_command?.[policy.install_command.indexOf('--proposal') + 1] === options['reviewer-policy-proposal'])).map(p => p.file);
+    if (!targets.length) throw new Error('Reviewer policy changed or has not been reviewed. Display the current proposal and pass its --reviewer-policy-proposal digest with the decision.');
   }
-  return { policies: profiles.flatMap(p => p.policies), profiles, activation: 'unverified' };
+  for (const file of targets) {
+    await configureSingleReviewerPolicy(executable, { ...options, codexHome: dirname(file) }, ask, execute);
+  }
+  return inspectReviewerPolicies(executable, options, execute);
 }
