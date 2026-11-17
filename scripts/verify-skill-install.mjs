@@ -33,19 +33,25 @@ try {
     env, timeout: 120000, maxBuffer: 4 * 1024 * 1024,
   });
   const executable = join(prefix, 'node_modules', '@doomerlabs', 'doomer', 'bin', 'doomer.js');
-  const { stdout } = await exec(process.execPath, [executable, 'install', '--agent', 'codex', '--json'], {
+  const runManager = args => exec(process.execPath, [executable, ...args], {
     cwd: process.cwd(), env, timeout: 180000, maxBuffer: 4 * 1024 * 1024,
   });
+  const { stdout } = await runManager(['install', '--no-hooks', '--json']);
   const result = JSON.parse(stdout);
   assert.equal(result.ready, true);
   assert.equal(result.capabilities.watchAgentHook, true);
   assert.equal(result.uploadApproved, false, 'rehearsal does not grant upload permission');
+  assert.deepEqual(result.hooks, []);
+  await assert.rejects(readFile(join(home, '.codex/hooks.json')), { code: 'ENOENT' });
+  await assert.rejects(runManager(['onboard', '--agent', 'codex', '--json']), /Upload approval is required/);
+  await runManager(['install-hooks', '--agent', 'codex']);
   const state = JSON.parse(await readFile(join(home, 'manager', 'state.json'), 'utf8'));
   assert.equal(state.native.version, metadata.doomer.cliVersion);
+  assert.deepEqual(state.grants, [], 'installing hooks does not grant upload permission');
   assert.match(await readFile(join(home, '.agents/skills/doomer/SKILL.md'), 'utf8'), /^name:\s*doomer\s*$/m);
   const hooks = JSON.parse(await readFile(join(home, '.codex/hooks.json'), 'utf8'));
   assert.ok(hooks.hooks.UserPromptSubmit.some(group => group.hooks.some(hook => hook.command.includes(' watch agent '))));
-  console.log('Packed-artifact isolated install passed: pinned Go CLI, pinned skill and Codex hooks; no upload approval.');
+  console.log('Packed-artifact isolated install passed: pinned Go CLI, pinned skill, explicit upload approval check and separate Codex hook installation.');
 } finally {
   await rm(home, { recursive: true, force: true });
 }
