@@ -203,7 +203,9 @@ export async function setup(options, { forceSkill = true } = {}) {
   const installed = await setupStep('Installing the manager', retry, () => installCLI({ from: options.from }));
   const native = await setupStep('Installing the Go CLI', retry, () => installNative({ version: options['cli-version'] }));
   if (forceSkill || options['skill-source'] || !await skillPresent(selected)) {
-    console.error('Adding the doomer skill through the official skills CLI…');
+    console.error(options['skill-source']
+      ? `Adding the doomer skill from local checkout ${options['skill-source']}…`
+      : 'Adding the doomer skill through the official skills CLI…');
     await setupStep('Installing the skill', retry, () => installSkill(selected, options['skill-source']));
   }
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');

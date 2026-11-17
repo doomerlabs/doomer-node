@@ -54,5 +54,7 @@ test('local skill source only applies to setup and must be an absolute checkout'
   for (const command of ['doctor', 'update', 'upgrade', 'install-hooks', 'uninstall']) {
     await assert.rejects(exec(process.execPath, [entry, command, '--skill-source', '/tmp/source']), /supported only by install and onboard/);
   }
-  await assert.rejects(exec(process.execPath, [entry, 'install', '--agent', 'claude', '--skill-source', 'relative/source']), /absolute local checkout/);
+  for (const command of ['install', 'onboard']) {
+    await assert.rejects(exec(process.execPath, [entry, command, '--agent', 'claude', '--skill-source', 'relative/source']), /absolute local checkout/);
+  }
 });
