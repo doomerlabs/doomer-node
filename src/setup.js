@@ -9,7 +9,7 @@ import { paths, developmentInstall, metadata, packageRoot, hash, npm, run, readS
 import { resolveAPI } from './api.js';
 import { uploadPrompt, acceptsUploadAnswer } from './permissions.js';
 import { installNative, validateCLIVersion } from './native.js';
-import { configureReviewerPolicy } from './reviewer-policy.js';
+import { configureReviewerPolicy, inspectReviewerPolicies } from './reviewer-policy.js';
 import { configureClaudeReviewPermission } from './claude-policy.js';
 import { reloadCodexHooks } from './codex.js';
 import { inspectNativeInstallation } from './doctor.js';
@@ -221,7 +221,16 @@ export async function setup(options, { forceSkill = true } = {}) {
   return result;
 }
 
-export async function doctor({ policy } = {}) {
+export async function doctor({ policy, fix = false, apiURL } = {}) {
+  let repairs;
+  if (fix) {
+    repairs = [];
+    const before = await readState();
+    const native = await inspectNativeInstallation(before);
+    if (native.capabilities.watchAgentHook) {
+      for (const agent of before.agents) repairs.push(await installHooks(agent, before.executable));
+    }
+  }
   const state = await readState();
   const runtime = state.runtime;
   const cli = !!runtime && await exists(runtime);
@@ -230,16 +239,16 @@ export async function doctor({ policy } = {}) {
   const hooks = await Promise.all(state.agents.map(agent => checkHooks(agent, state.executable)));
   const skill = await skillPresent(state.agents);
   const ready = cli && inspection.nativeStatus === 'available' && automaticReviews && inspection.commandInstalled && skill && hooks.every(h => h.configured && h.enabled);
-  const result = { ready, cli, ...inspection, automaticReviews, version: state.cliVersion || null,
+  const result = { ready, cli, ...(repairs ? { repairs } : {}), ...inspection, automaticReviews, version: state.cliVersion || null,
     claudeReviewPermission: state.claudeReviewPermission?.decision || 'unverified',
     executable: state.executable || null, skill: skill ? 'installed' : 'missing', hooks,
     uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })) };
-  const api = resolveAPI(undefined, state.api);
-  // Doctor is read-only and does not verify an account over the network. Setup
-  // supplies its freshly verified proposal; standalone diagnostics stay explicit.
+  const api = resolveAPI(apiURL, state.api);
+  // Inspect the current policy without applying decisions. Account verification
+  // may require the service; report actual failures instead of inventing a missing policy.
   if (policy) result.codexReviewPolicy = policy;
   else if (state.agents.includes('codex') && state.grants.some(g => g.api === api)) {
-    result.codexReviewPolicy = { policies: [], activation: 'unverified', error: 'Reviewer authorization has not been verified. Run onboard to inspect the current scoped policy.' };
+    result.codexReviewPolicy = await inspectReviewerPolicies(state.executable, { 'api-url': api });
   }
   return { ...result, ...installationGuidance(result, { api, localNative: state.native?.source === 'local', uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === api) }) };
 }

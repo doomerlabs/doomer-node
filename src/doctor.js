@@ -69,6 +69,7 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
   for (const hook of result.hooks) {
     const configured = hook.configured && hook.enabled;
     const name = hook.agent === 'claude' ? 'Claude Code' : 'Codex';
+    for (const profile of hook.profiles || []) rows.push(`                 ${profile.file}: ${profile.error || (profile.enabled === false ? (profile.configured ? 'disabled' : 'disabled; hooks need repair') : profile.configured ? 'configured; activation unverified' : 'hooks need repair')}`);
     row(name, configured ? 'Hooks configured; activation unverified' : hook.error || (hook.enabled === false ? 'Hooks disabled' : 'Hooks need repair'), configured ? 'ok' : 'error');
   }
   if (result.hooks.some(h => h.agent === 'claude')) row('Claude review', result.claudeReviewPermission || 'unverified', result.claudeReviewPermission === 'allow' ? 'ok' : 'warning');
@@ -92,7 +93,7 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
 
 export function formatSetup(result) {
   const names = result.agents.map(a => a === 'claude' ? 'Claude Code' : 'Codex').join(' and ');
-  const lines = [result.ready ? `Doomer is set up${names ? ` for ${names}` : ' for manual reviews'}.` : 'Doomer setup needs attention.',
+  const lines = [result.ready ? `Doomer is set up${names ? ` for ${names}` : ' without automatic review hooks'}.` : 'Doomer setup needs attention.',
     `CLI: ${result.executable}`,
     result.uploadApproved ? 'Review uploads approved for this service.' : 'Review uploads: off.'];
   if (result.issues.length) {

@@ -16,7 +16,7 @@ Usage: npx @doomerlabs/doomer <command>
   onboard                      Complete setup after installing the skill directly
   install-hooks                Install or repair agent hooks
   refresh-hooks                Reload hooks in a running local Codex server
-  doctor                       Check CLI, skill and hook readiness (no changes)
+  doctor                       Check CLI, skill and hooks (--fix repairs configured hooks)
   upgrade                      Update only the native CLI (--check to inspect)
   update                       Update CLI + skill and repair configured hooks
   uninstall                    Remove managed hooks, skill, CLI and local data
@@ -24,7 +24,7 @@ Usage: npx @doomerlabs/doomer <command>
 
 Setup options:
   --agent claude,codex         Agents to configure (interactive when omitted)
-  --no-hooks                   Install for standalone reviews
+  --no-hooks                   Install without automatic review hooks
   --approve-uploads            Approve all Doomer review uploads to this service
   --claude-review-permission allow|decline  Decide scoped Claude review permissions
   --reviewer-policy allow|decline  Decide the separately disclosed Codex policy
@@ -39,7 +39,7 @@ Node.js 22+ and Git required. Setup does not grant native hook trust.
 
 export async function main(args) {
   const { values: options, positionals } = parseArgs({ args, allowPositionals: true, strict: true, options: {
-    check: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
+    fix: { type: 'boolean' }, check: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
     agent: { type: 'string' },
     'claude-review-permission': { type: 'string' }, 'reviewer-policy': { type: 'string' }, 'reviewer-policy-proposal': { type: 'string' },
     'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
@@ -52,6 +52,7 @@ export async function main(args) {
   if (Object.hasOwn(options, 'claude-review-permission') && (!['allow', 'decline'].includes(options['claude-review-permission']) || !['install', 'onboard', 'update'].includes(command))) throw new Error('--claude-review-permission allow|decline requires install, onboard, or update.');
   if (Object.hasOwn(options, 'reviewer-policy') && (!['allow', 'decline'].includes(options['reviewer-policy']) || !['install', 'onboard', 'update'].includes(command))) throw new Error('--reviewer-policy allow|decline is supported only by install, onboard, and update, after reviewing the scoped proposal.');
   if (Object.hasOwn(options, 'reviewer-policy-proposal') && (!['install', 'onboard', 'update'].includes(command) || !options['reviewer-policy'])) throw new Error('--reviewer-policy-proposal requires a reviewer-policy decision with install, onboard, or update.');
+  if (Object.hasOwn(options, 'fix') && command !== 'doctor') throw new Error('--fix is supported only by doctor.');
   if (Object.hasOwn(options, 'check') && command !== 'upgrade') throw new Error('--check is supported only by upgrade.');
   if (Object.hasOwn(options, 'cli-version') && !['install', 'onboard'].includes(command)) throw new Error('--cli-version is supported only by install and onboard.');
   if (Object.hasOwn(options, 'skill-source') && !['install', 'onboard'].includes(command)) throw new Error('--skill-source is supported only by install and onboard.');
@@ -65,7 +66,7 @@ export async function main(args) {
       return result.ready ? 0 : 1;
     }
     case 'doctor': {
-      const result = await doctor();
+      const result = await doctor({ fix: options.fix, apiURL: options['api-url'] });
       if (options.json) console.log(JSON.stringify(result, null, 2));
       else console.log(formatDoctor(result));
       return result.ready ? 0 : 1;
@@ -76,7 +77,7 @@ export async function main(args) {
       if (!native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
       for (const agent of selected) {
         const result = await installHooks(agent, native.executable);
-        console.log(`${agent}: ${result.changed ? 'installed' : 'already configured'} (${result.file})`);
+        for (const profile of result.profiles) console.log(`${agent}: ${profile.changed ? 'installed' : 'already configured'} (${profile.file})`);
       }
       await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; });
       if(selected.includes('codex')) console.log(reloadMessage(await reloadCodexHooks()));

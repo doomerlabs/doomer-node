@@ -336,3 +336,21 @@ retaining `$defaults` and existing rules. Managed hard-deny rules still apply.
 [Local iteration](docs/local-iteration.md) describes bundling all three local checkouts, leaving production, installing the bundled Node manager/CLI/skill, and logging in to a development service without publishing Doomer to npm.
 
 `install` and `onboard` accept `--skill-source /absolute/path/to/skills` to install a local checkout containing `skills/doomer/SKILL.md` through the official skills CLI. This is an explicit per-run override; ordinary installs and updates retain the reviewed production skill pin.
+
+### Codex account profiles and repair
+
+Install, onboard, update, and install-hooks refresh the current Codex home and
+existing Doomer hook installations under macOS Codex Accounts profiles. Empty
+account profiles are not automatically enrolled. Existing unrelated hooks,
+permissions, disabled-hook settings, and native trust are preserved.
+
+`npx @doomerlabs/doomer@beta doctor --json` reports each discovered profile and
+inspects its current reviewer policy without applying policy decisions. Policy
+inspection may contact the configured service to verify account identity; a
+failure is reported as unknown authorization, not as a missing policy.
+
+`npx @doomerlabs/doomer@beta doctor --fix` repairs hooks for already-configured
+agents using the installed compatible CLI. It does not install missing software,
+accept upload or reviewer permissions, enable disabled hooks, or modify trust.
+Review changed hooks in the affected account profiles and restart those sessions;
+configuration checks do not prove that a running session loaded the hooks.
