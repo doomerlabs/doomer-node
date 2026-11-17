@@ -21,7 +21,9 @@ test('policy consent is separate, uses Go proposal commands, and preserves expli
   let result=await configureReviewerPolicy(process.execPath,{'approve-uploads':true,'api-url':'https://doomer.ai/api'},ask,execute);
   assert.equal(result.policies[0].state,'missing');
   assert.equal(calls.some(args=>args.includes('--decision')),false);
-  await assert.rejects(configureReviewerPolicy(process.execPath,{'reviewer-policy':'allow','reviewer-policy-proposal':'stale','api-url':'https://doomer.ai/api'},ask,execute), /No inspected proposal matched/);
+  await assert.rejects(configureReviewerPolicy(process.execPath,{'reviewer-policy':'allow','api-url':'https://doomer.ai/api'},ask,execute), /matching reviewed proposal/);
+  assert.equal(calls.some(args=>args.includes('--decision')),false);
+  await assert.rejects(configureReviewerPolicy(process.execPath,{'reviewer-policy':'allow','reviewer-policy-proposal':'stale','api-url':'https://doomer.ai/api'},ask,execute), /matching reviewed proposal/);
   result=await configureReviewerPolicy(process.execPath,{'reviewer-policy':'allow','reviewer-policy-proposal':'scope-digest','api-url':'https://doomer.ai/api'},ask,execute);
   assert.equal(result.policies[0].state,'configured'); assert.equal(result.activation,'unverified');
   state='missing';
@@ -66,7 +68,7 @@ test('policy diagnostics inspect each existing account profile without accepting
     return Buffer.from(JSON.stringify({policies:[{state:'missing',extra_policy:'scoped',changes:[],install_command:[process.execPath,'--proposal',digest,'--decision','allow']}]}));
   };
   const ask=()=>{throw new Error('must not prompt');};
-  await assert.rejects(configureReviewerPolicy(process.execPath,{'api-url':'https://doomer.ai/api','reviewer-policy':'allow','reviewer-policy-proposal':'stale'},ask,execute),/No inspected proposal matched/);
+  await assert.rejects(configureReviewerPolicy(process.execPath,{'api-url':'https://doomer.ai/api','reviewer-policy':'allow','reviewer-policy-proposal':'stale'},ask,execute),/matching reviewed proposal/);
   assert.deepEqual(decisions,[]);
   await configureReviewerPolicy(process.execPath,{'api-url':'https://doomer.ai/api','reviewer-policy':'allow','reviewer-policy-proposal':'profile-digest'},ask,execute);
   assert.deepEqual(decisions,[profile], 'explicit consent targets only the matching profile');
