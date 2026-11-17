@@ -50,7 +50,7 @@ test('policy diagnostics inspect each existing account profile without accepting
   await mkdir(profile,{recursive:true});
   await writeFile(join(profile,'hooks.json'),JSON.stringify({hooks:{Stop:[{hooks:[{command:'doomer agent-hook --managed-task-adapter'}]}]}}));
   const homes=[];
-  const result=await inspectReviewerPolicies(process.execPath,{},async (_exe,args,options) => {
+  const result=await inspectReviewerPolicies(process.execPath,{'api-url':'https://doomer.ai/api'},async (_exe,args,options) => {
     assert.equal(args.includes('--decision'),false);
     homes.push(options.env.CODEX_HOME);
     return Buffer.from(JSON.stringify({policies:[{state:'configured'}]}));
