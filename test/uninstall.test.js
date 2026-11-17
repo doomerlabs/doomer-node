@@ -103,8 +103,14 @@ test('permission teardown failure retains installation state for a retry', async
   const state=JSON.parse(await readFile(statePath));
   state.claudeReviewPermission={decision:'allow',file:settings,ownedRules:['owned']};
   await writeFile(statePath,JSON.stringify(state));
+  const originalHooks = await readFile(f.hook, 'utf8');
+  const originalClaude = await readFile(settings, 'utf8');
   await assert.rejects(f.run(),/Invalid Claude allow rules/);
   assert.deepEqual(JSON.parse(await readFile(statePath)),state);
+  assert.equal(await readFile(f.hook, 'utf8'), originalHooks);
+  assert.equal(await readFile(settings, 'utf8'), originalClaude);
+  await assert.rejects(lstat(f.audit), { code: 'ENOENT' });
+  assert.ok(await lstat(join(f.managed, 'uninstalling.json')));
   assert.ok(await lstat(f.global));
   assert.ok(await lstat(f.skill));
 });

@@ -81,6 +81,9 @@ else process.exit(1);
   await writeFile(join(codex, 'hooks.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo keep' }] }] }, trust: 'keep' }));
   const env = { ...process.env, DOOMER_API_URL:'https://doomer.ai/api', GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: '1', EXPECTED_SKILL_REVISION: skillRevision, HOME: home, DOOMER_HOME: join(home, 'state'), DOOMER_BIN_DIR: bin, CODEX_HOME: codex, CLAUDE_CONFIG_DIR: join(home, '.claude'), npm_execpath: npm, SOURCE: source, DOOMER_NATIVE_BINARY:native };
   const cli = args => exec(process.execPath, [localEntry, ...args], { env });
+  assert.deepEqual(JSON.parse((await cli(['install-hooks', '--no-hooks', '--json'])).stdout), {
+    status: 'skipped', agents: [], installed: false,
+  });
   await assert.rejects(cli(['install', '--agent', 'codex', '--json']), /Upload approval is required/);
   await assert.rejects(access(join(home, 'state', 'state.json')), { code: 'ENOENT' });
   await assert.rejects(access(join(home, 'calls')), { code: 'ENOENT' });
@@ -109,6 +112,7 @@ else process.exit(1);
   env.DOOMER_CONFIG_DIR = join(home, 'production-config');
   const proposed = JSON.parse((await cli(['onboard', '--agent', 'codex', '--approve-uploads', '--json'])).stdout);
   assert.equal(proposed.codexReviewPolicy.policies[0].state, 'missing');
+  assert.equal(proposed.codexReviewPolicy.policies[0].extra_policy, 'fixture scoped authorization');
   await assert.rejects(access(join(home, 'policy-installed')));
   const accepted = JSON.parse((await cli(['onboard', '--agent', 'codex', '--reviewer-policy', 'allow', '--reviewer-policy-proposal', 'fixture-scope-digest', '--json'])).stdout);
   assert.equal(accepted.codexReviewPolicy.policies[0].state, 'configured');

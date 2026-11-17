@@ -110,6 +110,9 @@ export function formatSetup(result) {
     if (result.codexReload?.restartRequired) lines.push('     Codex: start a new session to load the hooks.');
     lines.push('  2. In that session, open /hooks, find Doomer, and trust its hooks.');
     lines.push('  3. Ask your agent to make a small code change. A completed review confirms setup.');
+  } else if (result.ready && labels.length) {
+    lines.push('', 'After approving uploads, open /hooks in your agent and trust Doomer.');
+    if (result.agents.includes('claude')) lines.push('Claude Code: start a fresh session to load the hooks.');
   } else if (!labels.length && result.enableAutomaticReviews) {
     lines.push('', 'Enable automatic reviews:', result.enableAutomaticReviews.command, result.enableAutomaticReviews.instruction);
   }

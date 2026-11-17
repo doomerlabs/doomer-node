@@ -61,7 +61,10 @@ export async function main(args) {
     case 'install':
     case 'onboard': {
       const result = await setup(options, { forceSkill: command === 'install' });
-      if (result === null) return 0;
+      if (result === null) {
+        if (options.json) console.log(JSON.stringify({ status: 'canceled', ready: false }));
+        return 0;
+      }
       if (options.json) console.log(JSON.stringify(result, null, 2));
       else console.log(formatSetup(result));
       return result.ready ? 0 : 1;
@@ -74,19 +77,25 @@ export async function main(args) {
     }
     case 'install-hooks': {
       const selected = await selectAgents(options);
-      if (selected === null) return 0;
-      if (!selected.length) {
-        if (!options.json) console.log('No agent hooks selected.');
+      if (!selected?.length) {
+        if (options.json) console.log(JSON.stringify({ status: selected === null ? 'canceled' : 'skipped', agents: [], installed: false }));
+        else if (selected !== null) console.log('No agent hooks selected.');
         return 0;
       }
       const native = await installNative();
       if (!native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
-      for (const agent of selected) {
-        const result = await installHooks(agent, native.executable);
-        for (const profile of result.profiles) console.log(`${agent}: ${profile.changed ? 'installed' : 'already configured'} (${profile.file})`);
-      }
+      const hooks = [];
+      for (const agent of selected) hooks.push(await installHooks(agent, native.executable));
       await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; });
-      if(selected.includes('codex')) console.log(reloadMessage(await reloadCodexHooks()));
+      const codexReload = selected.includes('codex') ? await reloadCodexHooks() : undefined;
+      if (options.json) {
+        console.log(JSON.stringify({ status: 'configured', agents: selected, installed: true, hooks, codexReload }));
+        return 0;
+      }
+      for (const hook of hooks) {
+        for (const profile of hook.profiles) console.log(`${hook.agent}: ${profile.changed ? 'installed' : 'already configured'} (${profile.file})`);
+      }
+      if (codexReload) console.log(reloadMessage(codexReload));
       else console.log('Review and trust the hooks in your agent. Installation does not prove activation.');
       return 0;
     }

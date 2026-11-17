@@ -29,6 +29,12 @@ test('configured hooks do not imply upload consent or activation', () => {
   assert.doesNotMatch(both, /Codex: start a new session/);
   assert.ok(both.indexOf('Optional for running') > both.indexOf('3. Ask your agent'));
   assert.doesNotMatch(formatSetup({ ...state, ...result }), /Get your first review/);
+  const unapprovedClaude = { ...installed(), agents: ['claude'], hooks: [{ agent: 'claude', file: '/tmp/settings.json', configured: true, enabled: true }] };
+  const unapprovedText = formatSetup({ ...unapprovedClaude, ...installationGuidance(unapprovedClaude, { uploadApproved: false }) });
+  assert.match(unapprovedText, /Run: .*onboard .*--agent claude/);
+  assert.match(unapprovedText, /Automatic reviews will not run/);
+  assert.match(unapprovedText, /After approving uploads, open \/hooks/);
+  assert.match(unapprovedText, /Claude Code: start a fresh session/);
 
 });
 
