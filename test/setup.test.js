@@ -3,9 +3,44 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile, mkdir, rm, lstat, cp, symlink, access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { PassThrough } from 'node:stream';
 import { exec } from './helpers.js';
+import { selectUploadApproval } from '../src/setup.js';
 import { entry, packageRoot, metadata } from '../src/system.js';
 import { SKILL_SOURCE } from '../src/skill-source.js';
+
+const reviewAPI = 'https://doomer.ai/api';
+
+test('interactive upload approval offers browser linking or exit and explains SSH handoff', { timeout: 1000 }, async t => {
+  const choose = keys => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let transcript = '';
+    output.on('data', chunk => { transcript += chunk.toString(); });
+    t.after(() => { input.destroy(); output.destroy(); });
+    const decision = selectUploadApproval({}, ['codex'], { grants: [] }, reviewAPI, { interactive: true, input, output });
+    assert.match(transcript, /Connect your Doomer account/);
+    assert.match(transcript, /Open browser/);
+    assert.match(transcript, /No, exit setup/);
+    assert.match(transcript, /using SSH, open the printed link on another device/);
+    assert.doesNotMatch(transcript, /enable reviews here/i);
+    input.write(keys);
+    return decision;
+  };
+
+  assert.equal(await choose('\r'), 'browser');
+  assert.equal(await choose('\x1b[B\r'), 'exit');
+  assert.equal(await choose('\x03'), 'exit');
+});
+
+test('headless upload approval requires an explicit flag or an existing grant for the service', async () => {
+  const headless = { interactive: false };
+  const state = { grants: [{ scope: 'global', api: reviewAPI }] };
+  await assert.rejects(selectUploadApproval({}, ['codex'], state, 'https://example.test/api', headless), /Upload approval is required/);
+  assert.equal(await selectUploadApproval({ 'approve-uploads': true }, ['codex'], { grants: [] }, reviewAPI, headless), 'explicit');
+  assert.equal(await selectUploadApproval({}, ['codex'], state, reviewAPI, headless), 'existing');
+  assert.equal(await selectUploadApproval({}, [], { grants: [] }, reviewAPI, headless), 'existing');
+});
 
 test('global install replaces the old CLI, installs skills via official CLI, repairs hooks and supports skill-first onboarding', async t => {
   const home = await mkdtemp(join(tmpdir(), 'doomer-install-'));

@@ -177,22 +177,29 @@ export async function grant(api, credentialDirectory = process.env.DOOMER_CONFIG
   });
 }
 
-async function selectUploadApproval(options, selected, state, api) {
-  if (options['approve-uploads']) return 'terminal';
+export async function selectUploadApproval(options, selected, state, api, {
+  interactive = interactiveTerminal(), input = process.stdin, output = process.stderr,
+} = {}) {
+  if (options['approve-uploads']) return 'explicit';
   if (!selected.length || state.grants.some(grant => grant.scope === 'global' && grant.api === api)) return 'existing';
-  if (!interactiveTerminal()) {
+  if (!interactive) {
     throw new Error('Upload approval is required to set up automatic reviews. Run setup in a terminal, or pass --approve-uploads if you approve the uploads. Use --no-hooks for CLI-only setup.');
   }
 
-  console.error(uploadDisclosure(api));
+  output.write([
+    uploadDisclosure(api),
+    'Sign in and approve uploads in your browser to link reviews to your Doomer account.',
+    "If you're using SSH, open the printed link on another device.",
+    '',
+  ].join('\n'));
   const decision = await select({
-    message: 'Enable Doomer reviews?',
+    message: 'Connect your Doomer account',
     options: [
-      { value: 'browser', label: 'Review permissions in browser' },
-      { value: 'terminal', label: 'Yes, enable reviews here' },
+      { value: 'browser', label: 'Open browser' },
       { value: 'exit', label: 'No, exit setup' },
     ],
-    output: process.stderr,
+    input,
+    output,
   });
   return isCancel(decision) ? 'exit' : decision;
 }
@@ -254,7 +261,7 @@ export async function setup(options, { forceSkill = true } = {}) {
     if (!options.json) console.error('Installing the Doomer skill…');
     await setupStep('Installing the skill', retry, () => installSkill(selected, options['skill-source']));
   }
-  if (approval === 'terminal' || approval === 'browser') await grant(api, reviewCredentialDirectory);
+  if (approval === 'explicit' || approval === 'browser') await grant(api, reviewCredentialDirectory);
   await setupStep('Configuring agent hooks', retry, () => configure(selected, native.executable, options));
   if (selected.includes('claude')) await configureClaudeReviewPermission(native.executable, options['claude-review-permission']);
   const codexReviewPolicy = selected.includes('codex')
