@@ -142,3 +142,12 @@ test('aggregate errors retain a diagnostic if no profile supplied an error', () 
   assert.equal(result.issues.filter(i=>i.code==='hook_config_invalid').length,1);
   assert.match(result.issues[0].message,/unreadable/);
 });
+
+
+test('failed policy inspection requests a diagnostic retry rather than reinstallation', () => {
+  const result=installationGuidance({...installed(),codexReviewPolicy:{error:'network blocked',policies:[]}},{uploadApproved:true});
+  const issue=result.issues.find(i=>i.code==='reviewer_policy_unavailable');
+  assert.match(issue.command,/ doctor /);
+  assert.match(issue.instruction,/unknown, not missing/);
+  assert.doesNotMatch(issue.command,/onboard/);
+});

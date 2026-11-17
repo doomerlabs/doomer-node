@@ -33,7 +33,7 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
     else if (!hook.configured) add('hooks_missing', `${hook.agent} hooks need repair in ${(hook.profiles || [hook]).filter(p => !p.configured).map(p => p.file).join(', ')}.`, managerCommand('install-hooks', { agents: [hook.agent] }));
     else if (!hook.enabled) add('hooks_disabled', `${hook.agent} hooks are disabled in agent settings.`, null, `Enable hooks in ${hook.agent}, then review and trust Doomer in /hooks.`);
   }
-  if (result.codexReviewPolicy?.error) add('reviewer_policy_unavailable', result.codexReviewPolicy.error, managerCommand('onboard', { agents, api }));
+  if (result.codexReviewPolicy?.error) add('reviewer_policy_unavailable', `Reviewer policy inspection could not complete: ${result.codexReviewPolicy.error}`, managerCommand('doctor', { api }), 'Authorization is unknown, not missing. Retry this read-only diagnostic with access to the configured service and credential files; request normal sandbox permission if required. Do not reinstall or change permissions based on this inspection failure.');
   else if (result.codexReviewPolicy?.policies.some(p => p.state === 'declined')) {
     add('reviewer_policy_declined', 'Codex reviewer authorization was declined.', null, 'The saved decline is preserved. Revisit that decision explicitly before enabling automatic review authorization.');
   }
