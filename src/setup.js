@@ -3,7 +3,8 @@ import { randomBytes } from 'node:crypto';
 import { join, resolve, dirname, delimiter, isAbsolute } from 'node:path';
 import { mkdir, mkdtemp, rm, lstat, stat, access, readFile, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { isCancel, multiselect, select } from '@clack/prompts';
+import { isCancel, select } from '@clack/prompts';
+import { pickAgents } from './agent-picker.js';
 import { agents, hookFile, installHooks, checkHooks, globalSkillPaths } from './hooks.js';
 import { paths, developmentInstall, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked, interactiveTerminal } from './system.js';
 import { resolveAPI } from './api.js';
@@ -62,14 +63,7 @@ export async function selectAgents(options) {
     return defaults;
   }
 
-  const selected = await multiselect({
-    message: 'Set up Doomer reviews for',
-    options: agents.map(agent => ({ value: agent, label: label(agent) })),
-    initialValues: defaults,
-    required: false,
-    output: process.stderr,
-  });
-  return isCancel(selected) ? null : selected;
+  return pickAgents(agents.toReversed().map(agent => ({ agent, label: label(agent) })), defaults);
 }
 
 async function packageDigest(root) {

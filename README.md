@@ -55,8 +55,9 @@ explicitly selected candidate for authorized source testing.
 
 In a terminal, install and onboard display a checkbox picker. Detected agents
 are checked on the first run, and later runs preselect the previous selection.
-Use the arrow keys to move, Space to toggle, and Enter to continue. Clear all
-checkboxes to install without automatic review hooks.
+Use the arrow keys to move and Space or Enter to switch an agent on or off.
+Press Enter on the Continue row to confirm the listed agents. Turn all agents
+off to install without automatic review hooks.
 
 Without a terminal, setup uses the previous selection or detected agents. If
 neither is available, specify an agent or use `--no-hooks`. Setup with hooks
