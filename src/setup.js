@@ -221,7 +221,7 @@ export async function setup(options, { forceSkill = true } = {}) {
   return result;
 }
 
-export async function doctor({ policy, fix = false } = {}) {
+export async function doctor({ policy, fix = false, apiURL } = {}) {
   let repairs;
   if (fix) {
     repairs = [];
@@ -243,12 +243,12 @@ export async function doctor({ policy, fix = false } = {}) {
     claudeReviewPermission: state.claudeReviewPermission?.decision || 'unverified',
     executable: state.executable || null, skill: skill ? 'installed' : 'missing', hooks,
     uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })) };
-  const api = resolveAPI(undefined, state.api);
+  const api = resolveAPI(apiURL, state.api);
   // Inspect the current policy without applying decisions. Account verification
   // may require the service; report actual failures instead of inventing a missing policy.
   if (policy) result.codexReviewPolicy = policy;
   else if (state.agents.includes('codex') && state.grants.some(g => g.api === api)) {
-    result.codexReviewPolicy = await inspectReviewerPolicies(state.executable);
+    result.codexReviewPolicy = await inspectReviewerPolicies(state.executable, { 'api-url': api });
   }
   return { ...result, ...installationGuidance(result, { api, localNative: state.native?.source === 'local', uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === api) }) };
 }
