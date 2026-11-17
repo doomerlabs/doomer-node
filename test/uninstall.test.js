@@ -95,22 +95,38 @@ test('either uninstall order preserves the other profile and removes the shared 
 });
 
 
-test('permission teardown failure does not prevent uninstall cleanup', async t => {
-  const f = await fixture(t);
-  const settings = join(f.env.CLAUDE_CONFIG_DIR, 'settings.json');
-  await writeFile(settings, JSON.stringify({ permissions: { allow: 42 }, hooks: {} }));
-  const originalPermissions = JSON.parse(await readFile(settings, 'utf8')).permissions;
-  const statePath = join(f.managed, 'state.json');
-  const state = JSON.parse(await readFile(statePath));
-  state.claudeReviewPermission = { decision: 'allow', file: settings, ownedRules: ['owned'] };
-  await writeFile(statePath, JSON.stringify(state));
-  const result = JSON.parse((await f.run()).stdout);
-  assert.match(result.claudePermissionError, /Invalid Claude allow rules/);
-  assert.equal(result.removedData, true);
-  assert.equal(await readFile(f.audit, 'utf8'), 'stopped');
-  assert.ok(result.removedHooks.includes(f.hook));
-  assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')).permissions, originalPermissions);
-  const hooks = JSON.parse(await readFile(f.hook, 'utf8'));
-  assert.deepEqual(hooks.permissions, { deny: ['keep'] });
-  assert.deepEqual(hooks.hooks.Stop, [{ hooks: [{ command: 'echo unrelated' }] }]);
+test('permission teardown failure retains installation state for a retry', async t => {
+  const f=await fixture(t);
+  const settings=join(f.env.CLAUDE_CONFIG_DIR,'settings.json');
+  await writeFile(settings,JSON.stringify({permissions:{allow:42},hooks:{}}));
+  const statePath=join(f.managed,'state.json');
+  const state=JSON.parse(await readFile(statePath));
+  state.claudeReviewPermission={decision:'allow',file:settings,ownedRules:['owned']};
+  await writeFile(statePath,JSON.stringify(state));
+  const originalHooks = await readFile(f.hook, 'utf8');
+  const originalClaude = await readFile(settings, 'utf8');
+  await assert.rejects(f.run(),/Invalid Claude allow rules/);
+  assert.deepEqual(JSON.parse(await readFile(statePath)),state);
+  assert.equal(await readFile(f.hook, 'utf8'), originalHooks);
+  assert.equal(await readFile(settings, 'utf8'), originalClaude);
+  await assert.rejects(lstat(f.audit), { code: 'ENOENT' });
+  assert.ok(await lstat(join(f.managed, 'uninstalling.json')));
+  assert.ok(await lstat(f.global));
+  assert.ok(await lstat(f.skill));
+});
+
+test('production uninstall removes its skills when development uses isolated skill paths', async t => {
+  const f=await fixture(t);
+  const devHome=join(f.home,'dev-state');
+  const runtime=join(devHome,'runtime','doomer.js');
+  const skill=join(f.home,'private-dev','skills','doomer');
+  await mkdir(join(devHome,'runtime'),{recursive:true});await writeFile(runtime,'// manager');
+  await mkdir(skill,{recursive:true});await writeFile(join(skill,'SKILL.md'),'---\nname: doomer\n---\nDevelopment');
+  const dev={version:1,runtime,skillPaths:[skill]};
+  await writeFile(join(devHome,'state.json'),JSON.stringify(dev));
+  const result=JSON.parse((await exec(process.execPath,[entry,'uninstall','--json'],{env:{...f.env,DOOMER_DEV_HOME:devHome},cwd:f.home})).stdout);
+  assert.ok(result.removedSkills.includes(f.skill));
+  await assert.rejects(lstat(f.skill),{code:'ENOENT'});
+  assert.equal(await readFile(join(skill,'SKILL.md'),'utf8'),'---\nname: doomer\n---\nDevelopment');
+  assert.deepEqual(JSON.parse(await readFile(join(devHome,'state.json'))),dev);
 });

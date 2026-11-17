@@ -1,7 +1,8 @@
+import { isCancel, select } from '@clack/prompts';
 import { isAbsolute } from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { hookFile } from './hooks.js';
-import { atomicWrite, locked, readJSON, readState, changeState } from './system.js';
+import { atomicWrite, locked, readJSON, readState, changeState, interactiveTerminal } from './system.js';
 
 // These commands still require an unguessable active watcher control key and
 // its approved service. Never allow arbitrary Doomer, shell, or install commands.
@@ -13,16 +14,35 @@ export function claudeReviewRules(executable) {
     .map(command => `Bash(${executable} watch ${command} --control *)`);
 }
 
-export async function configureClaudeReviewPermission(executable, decision, ask) {
+async function askClaudeReviewPermission(executable) {
+  console.error('Claude can read results, submit assessments and finding decisions, and acknowledge advisories you’ve seen.');
+  console.error('This only applies to active Doomer reviews and preserves Claude’s existing rules.');
+  for (;;) {
+    const choice = await select({
+      message: 'Allow Claude Code to handle Doomer reviews?',
+      initialValue: 'allow',
+      options: [
+        { value: 'allow', label: 'Allow review commands' },
+        { value: 'defer', label: 'Not now' },
+        { value: 'decline', label: 'Don’t ask again' },
+        { value: 'details', label: 'View exact commands' },
+      ],
+      output: process.stderr,
+    });
+    if (isCancel(choice) || choice === 'defer') return;
+    if (choice !== 'details') return choice;
+    const paths = [...new Set([executable, await realpath(executable)])];
+    console.error(paths.flatMap(claudeReviewRules).join('\n'));
+    console.error('Claude auto mode also receives an explanation limited to these same commands.');
+  }
+}
+
+export async function configureClaudeReviewPermission(executable, decision) {
   const state = await readState();
   const previous = state.claudeReviewPermission;
   if (!decision && previous?.decision === 'decline') return previous;
-  if (!decision && previous?.decision !== 'allow' && process.stdin.isTTY) {
-    const rules = claudeReviewRules(executable);
-    console.error(`Claude review permission allows submitting assessments, finding decisions and explanations, reading results, and acknowledging displayed advisories through the active Doomer watcher. It does not allow installation, arbitrary shell commands, or changing Claude's deny rules. It also adds a matching auto-mode explanation while preserving built-in and existing rules.\n${rules.join('\n')}`);
-    const answer = await ask('Allow these Doomer review commands in Claude Code? [allow/not now/never] ');
-    if (answer.toLowerCase() === 'allow') decision = 'allow';
-    if (answer.toLowerCase() === 'never') decision = 'decline';
+  if (!decision && previous?.decision !== 'allow' && interactiveTerminal()) {
+    decision = await askClaudeReviewPermission(executable);
   }
   decision ||= previous?.decision;
   if (!decision) return { decision: 'unverified' };

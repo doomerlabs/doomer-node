@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
 import { join, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
+import { exec } from './helpers.js';
 import { detectInstalledAgents, selectAgents } from '../src/setup.js';
 
 test('agent detection finds runnable PATH entries, including symlinks, without running them', async t => {
@@ -35,4 +36,23 @@ test('explicit agent selections and standalone mode bypass interactive detection
   assert.deepEqual(await selectAgents({ agent: 'codex,claude,codex' }), ['codex', 'claude']);
   assert.deepEqual(await selectAgents({ 'no-hooks': true }), []);
   await assert.rejects(selectAgents({ agent: 'unknown' }), /Supported agents/);
+});
+
+
+test('noninteractive setup selects detected agents, remembers prior choices, and supports no detected agents', async t => {
+  const fixture = await mkdtemp(join(tmpdir(), 'doomer-agent-defaults-'));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+  const bin = join(fixture, 'bin');
+  await mkdir(bin);
+  const env = { ...process.env, DOOMER_HOME: fixture, DOOMER_DEV_INSTALL: '0', PATH: bin };
+  delete env.NODE_TEST_CONTEXT;
+  const source = new URL('../src/setup.js', import.meta.url).href;
+  const code = `import { selectAgents } from '${source}'; console.log(JSON.stringify(await selectAgents({json: true})))`;
+  const selected = async () => JSON.parse((await exec(process.execPath, ['--input-type=module', '-e', code], { env })).stdout);
+  assert.deepEqual(await selected(), []);
+  const extension = process.platform === 'win32' ? '.CMD' : '';
+  await writeFile(join(bin, `claude${extension}`), '', { mode: 0o755 });
+  assert.deepEqual(await selected(), ['claude']);
+  await writeFile(join(fixture, 'state.json'), JSON.stringify({ agents: ['codex'] }));
+  assert.deepEqual(await selected(), ['codex']);
 });

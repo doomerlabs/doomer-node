@@ -92,33 +92,38 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
 }
 
 export function formatSetup(result) {
-  const names = result.agents.map(a => a === 'claude' ? 'Claude Code' : 'Codex').join(' and ');
-  const lines = [result.ready ? `Doomer is set up${names ? ` for ${names}` : ' without automatic review hooks'}.` : 'Doomer setup needs attention.',
-    `CLI: ${result.executable}`,
-    result.uploadApproved ? 'Review uploads approved for this service.' : 'Review uploads: off.'];
-  if (result.issues.length) {
-    for (const issue of result.issues) {
-      lines.push('', issue.message);
-      if (issue.command) lines.push(`Run: ${issue.command}`);
-      if (issue.instruction) lines.push(issue.instruction);
-    }
+  const labels = result.agents.map(agent => agent === 'claude' ? 'Claude Code' : 'Codex');
+  const names = labels.join(' and ');
+  const lines = [result.ready ? `Doomer is set up${names ? ` for ${names}` : ' without automatic review hooks'}.` : 'Doomer setup needs attention.'];
+  const pathIssue = result.issues.find(issue => issue.code === 'command_not_on_path');
+  const setupIssues = result.issues.filter(issue => issue !== pathIssue);
+  for (const issue of setupIssues) {
+    lines.push('', issue.message);
+    if (issue.command) lines.push(`Run: ${issue.command}`);
+    if (issue.instruction) lines.push(issue.instruction);
   }
-  if (result.agents.includes('claude')) lines.push('', `Claude review permission: ${result.claudeReviewPermission || 'unverified'}.`, 'Allowing this permission is separate from source-upload consent and hook trust. If not configured, review the scoped commands and rerun onboard with --claude-review-permission allow or decline.');
-  for (const policy of result.codexReviewPolicy?.policies || []) {
-    lines.push('', `Codex reviewer policy: ${policy.state}; activation ${policy.activation}.`);
-    if (policy.state !== 'configured' && policy.state !== 'declined') {
-      lines.push(policy.extra_policy, ...policy.changes,
-        `Review this proposal separately from upload consent. Rerun onboard with --reviewer-policy allow (or decline) --reviewer-policy-proposal ${policy.install_command?.[policy.install_command.indexOf('--proposal') + 1]}.`);
-    }
+
+  if (result.ready && result.uploadApproved && labels.length) {
+    lines.push('', 'Get your first review');
+    lines.push(`  1. Open the repository you want reviewed in ${labels.join(' or ')}.`);
+    if (result.agents.includes('claude')) lines.push('     Claude Code: start a fresh session to load the hooks.');
+    if (result.codexReload?.restartRequired) lines.push('     Codex: start a new session to load the hooks.');
+    lines.push('  2. In that session, open /hooks, find Doomer, and trust its hooks.');
+    lines.push('  3. Ask your agent to make a small code change. A completed review confirms setup.');
+  } else if (result.ready && labels.length) {
+    lines.push('', 'After approving uploads, open /hooks in your agent and trust Doomer.');
+    if (result.agents.includes('claude')) lines.push('Claude Code: start a fresh session to load the hooks.');
+  } else if (!labels.length && result.enableAutomaticReviews) {
+    lines.push('', 'Enable automatic reviews:', result.enableAutomaticReviews.command, result.enableAutomaticReviews.instruction);
   }
-  if (result.agents.length) {
-    lines.push('', 'Next: open /hooks in your agent to review and trust Doomer.');
-    if (result.codexReload?.restartRequired) lines.push('Codex: start a new session to load the hooks.');
-    if (result.agents.includes('claude')) lines.push('Claude Code: start a new session if the hooks have not loaded.');
-    if (result.uploadApproved) lines.push('Then ask your agent for a small coding change. Doomer will review it automatically; a completed review confirms activation.');
-  } else {
-    lines.push('', result.next);
-    if (result.enableAutomaticReviews) lines.push('', 'Enable automatic reviews:', result.enableAutomaticReviews.command, result.enableAutomaticReviews.instruction);
+  if (result.agents.includes('claude') && !['allow', 'decline'].includes(result.claudeReviewPermission)) {
+    lines.push('', 'Claude may ask for permission to run Doomer review commands.');
+  }
+  if (pathIssue) {
+    lines.push('', 'Optional for running `doomer` from your shell. The hooks already use the installed CLI path.');
+    if (pathIssue.instruction) lines.push(pathIssue.instruction);
+  } else if (result.ready && result.executable) {
+    lines.push('', `CLI: ${result.executable}`);
   }
   return lines.join('\n');
 }
