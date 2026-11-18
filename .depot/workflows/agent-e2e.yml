@@ -45,7 +45,7 @@ jobs:
         with:
           repository: doomerlabs/doomer
           # Source metadata for the exact published Go beta tested below.
-          ref: 2026.11.17.1-beta.1
+          ref: 2026.11.17.2-beta.1
           path: candidate-cli
           persist-credentials: false
       - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c
@@ -66,7 +66,7 @@ jobs:
                 '--description-file',str(description)]
           if os.environ.get('COMPONENT_BASE'): args += ['--base',os.environ['COMPONENT_BASE']]
           if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch': args.append('--full-suite')
-          version='2026.11.17.1-beta.1'
+          version='2026.11.17.2-beta.1'
           filename='doomer_'+version+'_linux_amd64.tar.gz'
           base='https://downloads.doomer.ai/cli/releases/'+version+'/'
           def download(name):
@@ -77,12 +77,12 @@ jobs:
           if manifest['version']!=version or manifest['commit']!=commit: raise SystemExit(f'Release manifest {manifest.get("version")} at {manifest.get("commit")} does not match {version} at {commit}')
           archive=download(filename)
           digest=hashlib.sha256(archive).hexdigest()
-          if digest!='fb6dfdb5d44b0c2ef7b330e374d974877d4b1f625bcdfee288f8afc814622935': raise SystemExit(f'Unexpected {filename} SHA-256: {digest}')
+          if digest!='e2038b88b559475d2d023a27f36445e01fa1e7b42f0ba48028a59f1cf1216bb7': raise SystemExit(f'Unexpected {filename} SHA-256: {digest}')
           if manifest.get('artifacts',{}).get(filename)!='sha256:'+digest: raise SystemExit(f'Release manifest missing or mismatching {filename}: expected sha256:{digest}, got {manifest.get("artifacts",{}).get(filename)}')
           path=pathlib.Path(os.environ['RUNNER_TEMP'])/filename
           path.write_bytes(archive)
           args += ['--cli-archive',str(path),'--candidate-label',version,'--node-source',os.environ['COMPONENT_SOURCE'],
-                   '--skills-ref','4bd57eeb8d546dec97dfc7f0398ebcf959971f07']
+                   '--skills-ref','4c9e5aacab387912220c194b4e2daf38eb1bd738']
           raise SystemExit(subprocess.call(args))
           PYTHON
       - name: Validate selected result evidence
