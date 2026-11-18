@@ -55,8 +55,9 @@ explicitly selected candidate for authorized source testing.
 
 In a terminal, install and onboard display a checkbox picker. Detected agents
 are checked on the first run, and later runs preselect the previous selection.
-Use the arrow keys to move, Space to toggle, and Enter to continue. Clear all
-checkboxes to install without automatic review hooks.
+Use the arrow keys to move and Space or Enter to switch an agent on or off.
+Press Enter on the Continue row to confirm the listed agents. Turn all agents
+off to install without automatic review hooks.
 
 Without a terminal, setup uses the previous selection or detected agents. If
 neither is available, specify an agent or use `--no-hooks`. Setup with hooks
@@ -68,15 +69,17 @@ npx @doomerlabs/doomer install --agent claude,codex --approve-uploads
 npx @doomerlabs/doomer install --no-hooks
 ```
 
-For interactive setup, **Review permissions in browser** opens the approval
-page and signs you in when you allow reviews. The terminal also prints a link
-you can open on another machine. **Yes, enable reviews here** approves uploads
-without a browser. **No, exit setup** cancels onboarding. Native reviewer
-permissions remain a separate decision.
+When interactive setup needs upload approval, **Open browser** lets you sign in
+and approve uploads so reviews appear in your Doomer account. The terminal
+prints the approval link and code, which you can use from another device over
+SSH. **No, exit setup** cancels onboarding. Native reviewer permissions remain a
+separate decision.
 
-A human can add `--approve-uploads` to authorize all Doomer review uploads to
-the configured service, across repositories and agents. Agents must not supply approval flags
-without the user's authorization. Native hook trust is always user managed.
+For headless setup, a human can add `--approve-uploads` to authorize all Doomer
+review uploads to the configured service, across repositories and agents. The
+flag approves uploads without connecting a new account. Agents must not supply
+approval flags without the user's authorization. Native hook trust is always
+user managed.
 
 The installer pins a reviewed skill commit in `src/skill-source.js`; it does not
 follow a moving feature branch. Update that pin only alongside onboarding
