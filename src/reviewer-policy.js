@@ -50,7 +50,7 @@ async function configureSingleReviewerPolicy(executable, options, pick = select,
     if (policy.state === 'configured' || policy.state === 'declined') {
       if (!options.json) {
         const message = options['reviewer-policy']
-          ? `Codex review permission is already ${policy.state === 'configured' ? 'approved' : 'declined'}; --reviewer-policy ${options['reviewer-policy']} was not applied.`
+          ? `Codex review permission is already ${policy.state === 'configured' ? 'approved' : 'declined'}; --reviewer-policy ${options['reviewer-policy']} was not applied to this policy.`
           : policy.state === 'configured'
             ? 'Codex review commands already approved; reusing saved permission.'
             : 'Codex review permission was previously declined; keeping your saved choice and skipping the prompt.';

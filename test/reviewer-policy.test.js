@@ -51,6 +51,20 @@ test('policy consent is separate, uses Go proposal commands, and preserves expli
   await configureReviewerPolicy(process.execPath, { 'api-url': 'https://doomer.ai/api', 'reviewer-policy': 'allow', 'reviewer-policy-proposal': 'scope-digest', json: true, output }, ask, execute);
   assert.equal(transcript, '');
   assert.equal(calls.filter(args=>args.includes('--decision')).length,count);
+  transcript = '';
+  let applied = false;
+  const mixed = async (_exe, args) => {
+    if (args.includes('--decision')) applied = true;
+    const install_command = [process.execPath, '--proposal', 'scope-digest', '--decision', 'allow'];
+    return Buffer.from(JSON.stringify({ policies: [
+      { state: 'declined', install_command },
+      { state: applied ? 'configured' : 'missing', install_command },
+    ] }));
+  };
+  await configureReviewerPolicy(process.execPath, { 'api-url': 'https://doomer.ai/api', 'reviewer-policy': 'allow', 'reviewer-policy-proposal': 'scope-digest', output }, ask, mixed);
+  assert.equal(applied, true, 'the same decision still applies to the pending policy');
+  assert.match(transcript, /already declined; --reviewer-policy allow was not applied to this policy\./);
+  assert.doesNotMatch(transcript, /was not applied\./);
   await writeFile(join(home,'state.json'), JSON.stringify({grants:[]}));
   await assert.rejects(configureReviewerPolicy(process.execPath,{'reviewer-policy':'allow','api-url':'https://doomer.ai/api'},ask,execute), /no decision was applied/);
 });
