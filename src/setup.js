@@ -181,7 +181,11 @@ export async function selectUploadApproval(options, selected, state, api, {
   interactive = interactiveTerminal(), input = process.stdin, output = process.stderr,
 } = {}) {
   if (options['approve-uploads']) return 'explicit';
-  if (!selected.length || state.grants.some(grant => grant.scope === 'global' && grant.api === api)) return 'existing';
+  if (!selected.length) return 'existing';
+  if (state.grants.some(grant => grant.scope === 'global' && grant.api === api)) {
+    if (!options.json) output.write(`Uploads already approved for ${api}; reusing saved permission and skipping browser login.\n`);
+    return 'existing';
+  }
   if (!interactive) {
     throw new Error('Upload approval is required to set up automatic reviews. Run setup in a terminal, or pass --approve-uploads if you approve the uploads. Use --no-hooks for CLI-only setup.');
   }
@@ -263,7 +267,7 @@ export async function setup(options, { forceSkill = true } = {}) {
   }
   if (approval === 'explicit' || approval === 'browser') await grant(api, reviewCredentialDirectory);
   await setupStep('Configuring agent hooks', retry, () => configure(selected, native.executable, options));
-  if (selected.includes('claude')) await configureClaudeReviewPermission(native.executable, options['claude-review-permission']);
+  if (selected.includes('claude')) await configureClaudeReviewPermission(native.executable, options['claude-review-permission'], options);
   const codexReviewPolicy = selected.includes('codex')
     ? await setupStep('Configuring Codex reviewer policy', retry, () => configureReviewerPolicy(native.executable, options)) : undefined;
   const result = { ...installed, ...native, agents: selected, ...(await doctor({ policy: codexReviewPolicy })) };
@@ -320,7 +324,7 @@ export async function update(options) {
   await installSkill(selected);
   if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command.');
   for (const agent of selected) await installHooks(agent, native.executable);
-  if (selected.includes('claude')) await configureClaudeReviewPermission(native.executable, options['claude-review-permission']);
+  if (selected.includes('claude')) await configureClaudeReviewPermission(native.executable, options['claude-review-permission'], options);
   const codexReviewPolicy = selected.includes('codex')
     ? await configureReviewerPolicy(native.executable, options) : undefined;
   const updated = { ...result, ...native, version, agents: selected, ...(await doctor({ policy: codexReviewPolicy })) };

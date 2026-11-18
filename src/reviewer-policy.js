@@ -47,7 +47,17 @@ async function configureSingleReviewerPolicy(executable, options, pick = select,
   let installedPolicy = false;
   if (options['reviewer-policy'] && result.activation === 'not_required') throw new Error('Upload consent is required before deciding a reviewer policy; no decision was applied.');
   for (const policy of result.policies) {
-    if (policy.state === 'configured' || policy.state === 'declined') continue;
+    if (policy.state === 'configured' || policy.state === 'declined') {
+      if (!options.json) {
+        const message = options['reviewer-policy']
+          ? `Codex review permission is already ${policy.state === 'configured' ? 'approved' : 'declined'}; --reviewer-policy ${options['reviewer-policy']} was not applied to this policy.`
+          : policy.state === 'configured'
+            ? 'Codex review commands already approved; reusing saved permission.'
+            : 'Codex review permission was previously declined; keeping your saved choice and skipping the prompt.';
+        (options.output || process.stderr).write(`${message} (${policy.config_path || options.codexHome})\n`);
+      }
+      continue;
+    }
     let decision = options['reviewer-policy'];
     if (!decision && interactiveTerminal()) decision = await askReviewerPolicy(policy, pick);
     if (!decision) continue;

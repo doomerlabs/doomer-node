@@ -37,10 +37,14 @@ async function askClaudeReviewPermission(executable) {
   }
 }
 
-export async function configureClaudeReviewPermission(executable, decision) {
+export async function configureClaudeReviewPermission(executable, decision, { json = false, output = process.stderr } = {}) {
   const state = await readState();
   const previous = state.claudeReviewPermission;
-  if (!decision && previous?.decision === 'decline') return previous;
+  const reused = !decision && previous?.decision === 'allow';
+  if (!decision && previous?.decision === 'decline') {
+    if (!json) output.write('Claude review permission was previously declined; keeping your saved choice and skipping the prompt.\n');
+    return previous;
+  }
   if (!decision && previous?.decision !== 'allow' && interactiveTerminal()) {
     decision = await askClaudeReviewPermission(executable);
   }
@@ -91,6 +95,7 @@ export async function configureClaudeReviewPermission(executable, decision) {
     }
     await changeState(s => { s.claudeReviewPermission = result; });
   });
+  if (reused && !json) output.write('Claude review commands already approved; reusing saved permission.\n');
   return result;
 }
 
