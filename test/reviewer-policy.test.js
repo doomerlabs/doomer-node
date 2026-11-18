@@ -52,17 +52,17 @@ test('policy consent is separate, uses Go proposal commands, and preserves expli
   assert.equal(transcript, '');
   assert.equal(calls.filter(args=>args.includes('--decision')).length,count);
   transcript = '';
-  let applied = false;
+  const appliedScopes = [];
   const mixed = async (_exe, args) => {
-    if (args.includes('--decision')) applied = true;
-    const install_command = [process.execPath, '--proposal', 'scope-digest', '--decision', 'allow'];
+    if (args.includes('--decision')) appliedScopes.push(args[args.indexOf('--scope') + 1]);
+    const command = scope => [process.execPath, '--scope', scope, '--proposal', 'scope-digest', '--decision', 'allow'];
     return Buffer.from(JSON.stringify({ policies: [
-      { state: 'declined', install_command },
-      { state: applied ? 'configured' : 'missing', install_command },
+      { state: 'declined', install_command: command('saved-decline') },
+      { state: appliedScopes.includes('pending') ? 'configured' : 'missing', install_command: command('pending') },
     ] }));
   };
   await configureReviewerPolicy(process.execPath, { 'api-url': 'https://doomer.ai/api', 'reviewer-policy': 'allow', 'reviewer-policy-proposal': 'scope-digest', output }, ask, mixed);
-  assert.equal(applied, true, 'the same decision still applies to the pending policy');
+  assert.deepEqual(appliedScopes, ['pending'], 'only the pending policy receives the decision; the saved decline is preserved');
   assert.match(transcript, /already declined; --reviewer-policy allow was not applied to this policy\./);
   assert.doesNotMatch(transcript, /was not applied\./);
   await writeFile(join(home,'state.json'), JSON.stringify({grants:[]}));
