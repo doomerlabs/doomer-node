@@ -6,6 +6,7 @@ import { installNative, upgradeNative } from './native.js';
 import { doctorService } from './doctor-service.js';
 import { uninstall } from './uninstall.js';
 import { reloadCodexHooks, reloadMessage } from './codex.js';
+import { managedAgentConfig, managedCommand } from './mdm.js';
 import { formatDoctor, formatSetup } from './doctor.js';
 
 const HELP = `Doomer manager ${metadata.version}
@@ -21,6 +22,8 @@ Usage: npx @doomerlabs/doomer <command>
   update                       Update CLI + skill and repair configured hooks
   uninstall                    Remove managed hooks, skill, CLI and local data
   revoke                       Revoke saved upload approval for this service
+  mdm-enroll                   Enroll using the macOS managed profile
+  mdm-agent-config             Print managed hook configuration for --agent
 
 Setup options:
   --agent claude,codex         Agents to configure (picker or detected defaults when omitted)
@@ -58,6 +61,15 @@ export async function main(args) {
   if (Object.hasOwn(options, 'skill-source') && !['install', 'onboard'].includes(command)) throw new Error('--skill-source is supported only by install and onboard.');
   if (extra.length) throw new Error('Unexpected command arguments. Run npx @doomerlabs/doomer --help.');
   switch (command) {
+    case 'mdm-enroll':
+    case 'mdm-hook': {
+      console.log(JSON.stringify(await managedCommand(command, options.agent)));
+      return 0;
+    }
+    case 'mdm-agent-config': {
+      console.log(JSON.stringify(managedAgentConfig(options.agent), null, 2));
+      return 0;
+    }
     case 'install':
     case 'onboard': {
       const result = await setup(options, { forceSkill: command === 'install' });
