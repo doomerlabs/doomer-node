@@ -3,7 +3,7 @@ import { readState, changeState, metadata, developmentInstall } from './system.j
 import { setup, doctor, update, selectAgents } from './setup.js';
 import { installHooks } from './hooks.js';
 import { installNative, upgradeNative } from './native.js';
-import { resolveAPI } from './api.js';
+import { doctorService } from './doctor-service.js';
 import { uninstall } from './uninstall.js';
 import { reloadCodexHooks, reloadMessage } from './codex.js';
 import { formatDoctor, formatSetup } from './doctor.js';
@@ -128,9 +128,13 @@ export async function main(args) {
       return 0;
     }
     case 'revoke': {
-      const service = resolveAPI(options['api-url'], (await readState()).api);
-      await changeState(s => { s.grants = s.grants.filter(g => g.api !== service); });
-      console.log(`Removed saved upload approval for ${new URL(service).origin}.`);
+      const { api: service } = await doctorService({ explicit: options['api-url'], saved: (await readState()).api });
+      let removed = false;
+      await changeState(s => {
+        removed = s.grants.some(g => g.api === service);
+        s.grants = s.grants.filter(g => g.api !== service);
+      });
+      console.log(removed ? `Removed saved upload approval for ${service}.` : `No saved upload approval for ${service}.`);
       return 0;
     }
     default: throw new Error(`Unknown command ${command}. Run npx @doomerlabs/doomer --help.`);

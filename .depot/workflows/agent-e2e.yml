@@ -38,14 +38,14 @@ jobs:
         with:
           repository: doomerlabs/agent-e2e
           token: ${{ secrets.AGENT_E2E_READ_TOKEN }}
-          ref: abf331a70b3375bad6f8b5b234d1529420d4b335
+          ref: 299326cf48011a6c25940d1d82483aad3981a960
           path: e2e-runner
           persist-credentials: false
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: doomerlabs/doomer
-          # Source metadata for the exact published Go beta tested below.
-          ref: 2026.11.17.2-beta.1
+          # Includes the quiet-review hook fix required by the current runner.
+          ref: 688faaaf9c627565edebb60035121662f33a4518
           path: candidate-cli
           persist-credentials: false
       - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c
@@ -57,7 +57,7 @@ jobs:
       - name: Select and run shared agent scenarios
         run: |
           python3 - <<'PYTHON'
-          import hashlib,json,os,pathlib,subprocess,urllib.request
+          import json,os,pathlib,subprocess
           event=json.loads(pathlib.Path(os.environ['GITHUB_EVENT_PATH']).read_text())
           description=pathlib.Path(os.environ['RUNNER_TEMP'])/'component-description.txt'
           description.write_text((event.get('pull_request') or {}).get('body') or '')
@@ -66,23 +66,8 @@ jobs:
                 '--description-file',str(description)]
           if os.environ.get('COMPONENT_BASE'): args += ['--base',os.environ['COMPONENT_BASE']]
           if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch': args.append('--full-suite')
-          version='2026.11.17.2-beta.1'
-          filename='doomer_'+version+'_linux_amd64.tar.gz'
-          base='https://downloads.doomer.ai/cli/releases/'+version+'/'
-          def download(name):
-              request=urllib.request.Request(base+name,headers={'User-Agent':'Doomer-Release-Verification/1','X-Doomer-Release-Verification':'1'})
-              return urllib.request.urlopen(request,timeout=60).read()
-          manifest=json.loads(download('release-manifest.json'))
-          commit=subprocess.check_output(['git','-C',os.environ['CANDIDATE_SOURCE'],'rev-parse','HEAD'],text=True).strip()
-          if manifest['version']!=version or manifest['commit']!=commit: raise SystemExit(f'Release manifest {manifest.get("version")} at {manifest.get("commit")} does not match {version} at {commit}')
-          archive=download(filename)
-          digest=hashlib.sha256(archive).hexdigest()
-          if digest!='e2038b88b559475d2d023a27f36445e01fa1e7b42f0ba48028a59f1cf1216bb7': raise SystemExit(f'Unexpected {filename} SHA-256: {digest}')
-          if manifest.get('artifacts',{}).get(filename)!='sha256:'+digest: raise SystemExit(f'Release manifest missing or mismatching {filename}: expected sha256:{digest}, got {manifest.get("artifacts",{}).get(filename)}')
-          path=pathlib.Path(os.environ['RUNNER_TEMP'])/filename
-          path.write_bytes(archive)
-          args += ['--cli-archive',str(path),'--candidate-label',version,'--node-source',os.environ['COMPONENT_SOURCE'],
-                   '--skills-ref','4c9e5aacab387912220c194b4e2daf38eb1bd738']
+          args += ['--cli-source',os.environ['CANDIDATE_SOURCE'],'--node-source',os.environ['COMPONENT_SOURCE'],
+                   '--skills-ref','5f36142ee5da8ab480d5ef7912a944c80b2e292e']
           raise SystemExit(subprocess.call(args))
           PYTHON
       - name: Validate selected result evidence

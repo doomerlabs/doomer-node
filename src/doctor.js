@@ -55,6 +55,7 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
     rows.push(`  ${paint(symbol, code)} ${label.padEnd(12)} ${value}`);
   };
   row('Manager', `${metadata.version}${result.cli ? '' : ' — installation missing'}`, result.cli ? 'ok' : 'error');
+  if (result.api) row('Service', `${result.api} (${result.apiSource}${result.apiConfigFile ? `: ${result.apiConfigFile}` : ''})`);
   row('Go CLI', result.nativeStatus === 'available' ? result.nativeVersion : result.nativeStatus === 'missing' ? 'Missing' : 'Present, but could not run as Doomer', result.nativeStatus === 'available' ? 'ok' : 'error');
   if (result.nativeStatus === 'available' && result.nativeVersion !== result.recordedNativeVersion) {
     rows.push(`                 ${paint('Binary updated since installation', '2')}`);
@@ -76,7 +77,7 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
   if (!result.automaticReviews) row('Watch', 'Current watch command unavailable', 'error');
   if (result.reviewerAuthorization) {
     const auth = result.reviewerAuthorization;
-    row('Consent', auth.uploadConsent === 'approved' ? 'Snapshots, task context, finding decisions and explanations approved' : 'Not approved', auth.uploadConsent === 'approved' ? 'ok' : 'warning');
+    row('Consent', auth.uploadConsent === 'approved' ? 'Snapshots, task context, finding decisions and explanations approved' : auth.uploadConsent === 'unverified' ? 'Unverified' : 'Not approved', auth.uploadConsent === 'approved' ? 'ok' : 'warning');
     if (auth.policy !== 'not_required') row('Review policy', `${auth.policy}; activation ${auth.activation}`, auth.policy === 'installed' ? 'ok' : 'warning');
   }
   rows.push('', paint(result.ready ? 'Installation ready' : 'Installation needs attention', result.ready ? '32;1' : '33;1'));

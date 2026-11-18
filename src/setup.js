@@ -7,7 +7,7 @@ import { isCancel, select } from '@clack/prompts';
 import { pickAgents } from './agent-picker.js';
 import { agents, hookFile, installHooks, checkHooks, globalSkillPaths } from './hooks.js';
 import { paths, developmentInstall, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked, interactiveTerminal } from './system.js';
-import { resolveAPI } from './api.js';
+import { doctorService } from './doctor-service.js';
 import { uploadDisclosure } from './permissions.js';
 import { installNative, validateCLIVersion } from './native.js';
 import { configureReviewerPolicy, inspectReviewerPolicies } from './reviewer-policy.js';
@@ -146,33 +146,36 @@ export async function skillPresent(selected = []) {
 }
 
 export async function configure(selected, runtime, options) {
+  const service = await doctorService({ explicit: options['api-url'], saved: (await readState()).api });
   const installed = [];
   for (const agent of selected) installed.push(await installHooks(agent, runtime));
-  await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; s.api = resolveAPI(options['api-url'], s.api); });
+  await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; s.api = service.api; });
   await changeState(s => {
-    const service = resolveAPI(options['api-url'], s.api);
-    if (s.grants.some(g => g.api === service)) {
+    const api = service.api;
+    if (s.grants.some(g => g.api === api)) {
       s.identities ??= {};
-      s.identities[service] ||= `doomer_anon_${randomBytes(32).toString('base64url')}`;
-      if (process.env.DOOMER_CONFIG_DIR) {
+      s.identities[api] ||= `doomer_anon_${randomBytes(32).toString('base64url')}`;
+      if (service.credentialDirectory) {
         s.credentialDirs ??= {};
-        s.credentialDirs[service] ||= resolve(process.env.DOOMER_CONFIG_DIR);
+        s.credentialDirs[api] ||= resolve(service.credentialDirectory);
       }
     }
   });
   return installed;
 }
 
-export async function grant(api, credentialDirectory = process.env.DOOMER_CONFIG_DIR) {
-  await changeState(s => {
-    const service = resolveAPI(api, s.api);
-    s.grants = s.grants.filter(g => g.api !== service);
-    s.grants.push({ scope: 'global', api: service, approvedAt: new Date().toISOString() });
+export async function grant(explicit, credentialDirectory) {
+  await changeState(async s => {
+    const service = await doctorService({ explicit, saved: s.api });
+    const api = service.api;
+    credentialDirectory ??= service.credentialDirectory;
+    s.grants = s.grants.filter(g => g.api !== api);
+    s.grants.push({ scope: 'global', api, approvedAt: new Date().toISOString() });
     s.identities ??= {};
-    s.identities[service] ||= `doomer_anon_${randomBytes(32).toString('base64url')}`;
+    s.identities[api] ||= `doomer_anon_${randomBytes(32).toString('base64url')}`;
     if (credentialDirectory) {
       s.credentialDirs ??= {};
-      s.credentialDirs[service] = resolve(credentialDirectory);
+      s.credentialDirs[api] = resolve(credentialDirectory);
     }
   });
 }
@@ -216,7 +219,7 @@ export async function setup(options, { forceSkill = true } = {}) {
     }
   }
   const state = await readState();
-  const api = resolveAPI(options['api-url'], state.api);
+  const { api } = await doctorService({ explicit: options['api-url'], saved: state.api });
   const selected = await selectAgents(options);
   if (selected === null) return null;
   if (options['claude-review-permission'] && !selected.includes('claude')) throw new Error('--claude-review-permission requires selecting claude.');
@@ -270,7 +273,7 @@ export async function setup(options, { forceSkill = true } = {}) {
   if (selected.includes('claude')) await configureClaudeReviewPermission(native.executable, options['claude-review-permission'], options);
   const codexReviewPolicy = selected.includes('codex')
     ? await setupStep('Configuring Codex reviewer policy', retry, () => configureReviewerPolicy(native.executable, options)) : undefined;
-  const result = { ...installed, ...native, agents: selected, ...(await doctor({ policy: codexReviewPolicy })) };
+  const result = { ...installed, ...native, agents: selected, ...(await doctor({ policy: codexReviewPolicy, apiURL: options['api-url'] })) };
   if(selected.includes('codex')) {
     result.codexReload=await reloadCodexHooks();
 
@@ -300,14 +303,22 @@ export async function doctor({ policy, fix = false, apiURL } = {}) {
     claudeReviewPermission: state.claudeReviewPermission?.decision || 'unverified',
     executable: state.executable || null, skill: skill ? 'installed' : 'missing', hooks,
     uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })) };
-  const api = resolveAPI(apiURL, state.api);
+  let service;
+  try { service = await doctorService({ explicit: apiURL, saved: state.api }); }
+  catch (error) {
+    const issue = { code: 'service_config_invalid', message: error.message, instruction: 'Fix the service URL or nearest .doomer.env, then run doctor again. No upload authorization was verified.' };
+    return { ...result, ready: false, uploadApproved: false, reviewConfigured: false,
+      issues: [issue], next: `${issue.message} ${issue.instruction}`,
+      reviewerAuthorization: { uploadConsent: 'unverified', policy: 'unverified', activation: 'unverified' } };
+  }
+  const { api, credentialDirectory: _credentialDirectory, ...routing } = service;
   // Inspect the current policy without applying decisions. Account verification
   // may require the service; report actual failures instead of inventing a missing policy.
   if (policy) result.codexReviewPolicy = policy;
   else if (state.agents.includes('codex') && state.grants.some(g => g.api === api)) {
     result.codexReviewPolicy = await inspectReviewerPolicies(state.executable, { 'api-url': api });
   }
-  return { ...result, ...installationGuidance(result, { api, localNative: state.native?.source === 'local', uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === api) }) };
+  return { ...result, api, ...routing, ...installationGuidance(result, { api, localNative: state.native?.source === 'local', uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === api) }) };
 }
 
 export async function update(options) {
@@ -327,7 +338,7 @@ export async function update(options) {
   if (selected.includes('claude')) await configureClaudeReviewPermission(native.executable, options['claude-review-permission'], options);
   const codexReviewPolicy = selected.includes('codex')
     ? await configureReviewerPolicy(native.executable, options) : undefined;
-  const updated = { ...result, ...native, version, agents: selected, ...(await doctor({ policy: codexReviewPolicy })) };
+  const updated = { ...result, ...native, version, agents: selected, ...(await doctor({ policy: codexReviewPolicy, apiURL: options['api-url'] })) };
   if(selected.includes('codex')) {
     updated.codexReload=await reloadCodexHooks();
 

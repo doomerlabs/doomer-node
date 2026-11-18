@@ -130,7 +130,7 @@ else process.exit(1);
   const codex = join(home, '.codex'); await mkdir(codex);
   await writeFile(join(codex, 'hooks.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo keep' }] }] }, trust: 'keep' }));
   const env = { ...process.env, DOOMER_API_URL:'https://doomer.ai/api', GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: '1', EXPECTED_SKILL_REVISION: skillRevision, HOME: home, DOOMER_HOME: join(home, 'state'), DOOMER_BIN_DIR: bin, CODEX_HOME: codex, CLAUDE_CONFIG_DIR: join(home, '.claude'), npm_execpath: npm, SOURCE: source, DOOMER_NATIVE_BINARY:native };
-  const cli = args => exec(process.execPath, [localEntry, ...args], { env });
+  const cli = args => exec(process.execPath, [localEntry, ...args], { env, cwd: home });
   assert.deepEqual(JSON.parse((await cli(['install-hooks', '--no-hooks', '--json'])).stdout), {
     status: 'skipped', agents: [], installed: false,
   });
@@ -181,7 +181,7 @@ else process.exit(1);
   const brokenHooks = JSON.parse(await readFile(join(codex, 'hooks.json'), 'utf8'));
   delete brokenHooks.hooks.Stop;
   await writeFile(join(codex, 'hooks.json'), JSON.stringify(brokenHooks));
-  const broken = JSON.parse((await exec(process.execPath, [localEntry, 'doctor', '--json'], {env}).catch(error => ({stdout:error.stdout}))).stdout);
+  const broken = JSON.parse((await exec(process.execPath, [localEntry, 'doctor', '--json'], {env, cwd: home}).catch(error => ({stdout:error.stdout}))).stdout);
   assert.equal(broken.ready, false);
   const doctorRepaired = JSON.parse((await cli(['doctor', '--fix', '--json'])).stdout);
   assert.equal(doctorRepaired.ready, true);
