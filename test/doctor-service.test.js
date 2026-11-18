@@ -143,7 +143,10 @@ test('configure, grant, doctor and revoke agree on directory service and preserv
   assert.deepEqual(state.grants.map(g => g.api).sort(), [local, production].sort());
   const diagnosed = await exec(process.execPath, [entry, 'doctor', '--json'], { cwd, env }).catch(error => error);
   assert.equal(JSON.parse(diagnosed.stdout).uploadApproved, true);
-  await exec(process.execPath, [entry, 'revoke'], { cwd, env });
+  const revoked = await exec(process.execPath, [entry, 'revoke'], { cwd, env });
+  assert.match(revoked.stdout, /Removed saved upload approval for https:\/\/doomer.ai\/api/);
+  const repeated = await exec(process.execPath, [entry, 'revoke'], { cwd, env });
+  assert.match(repeated.stdout, /No saved upload approval/);
   assert.deepEqual(JSON.parse(await readFile(stateFile, 'utf8')).grants.map(g => g.api), [local]);
   await writeFile(file, 'BAD=private-secret');
   await assert.rejects(exec(process.execPath, ['--input-type=module', '-e', script], { cwd, env }));

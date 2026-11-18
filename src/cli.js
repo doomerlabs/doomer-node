@@ -129,8 +129,12 @@ export async function main(args) {
     }
     case 'revoke': {
       const { api: service } = await doctorService({ explicit: options['api-url'], saved: (await readState()).api });
-      await changeState(s => { s.grants = s.grants.filter(g => g.api !== service); });
-      console.log(`Removed saved upload approval for ${new URL(service).origin}.`);
+      let removed = false;
+      await changeState(s => {
+        removed = s.grants.some(g => g.api === service);
+        s.grants = s.grants.filter(g => g.api !== service);
+      });
+      console.log(removed ? `Removed saved upload approval for ${service}.` : `No saved upload approval for ${service}.`);
       return 0;
     }
     default: throw new Error(`Unknown command ${command}. Run npx @doomerlabs/doomer --help.`);
