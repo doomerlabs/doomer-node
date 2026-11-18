@@ -42,6 +42,21 @@ test('headless upload approval requires an explicit flag or an existing grant fo
   assert.equal(await selectUploadApproval({}, [], { grants: [] }, reviewAPI, headless), 'existing');
 });
 
+test('saved upload approval explains the skipped login only for human output with selected agents', async () => {
+  let transcript = '';
+  const io = { interactive: false, output: { write: text => { transcript += text; } } };
+  const state = { grants: [{ scope: 'global', api: reviewAPI }] };
+  assert.equal(await selectUploadApproval({}, ['claude'], state, reviewAPI, io), 'existing');
+  assert.match(transcript, /Uploads already approved for https:\/\/doomer.ai\/api; reusing saved permission and skipping browser login/);
+  transcript = '';
+  await selectUploadApproval({ json: true }, ['claude'], state, reviewAPI, io);
+  await selectUploadApproval({}, [], state, reviewAPI, io);
+  await selectUploadApproval({ 'approve-uploads': true }, ['claude'], state, reviewAPI, io);
+  assert.equal(transcript, '');
+  await assert.rejects(selectUploadApproval({}, ['claude'], state, 'https://other.example/api', io), /Upload approval is required/);
+  assert.equal(transcript, '');
+});
+
 test('global install replaces the old CLI, installs skills via official CLI, repairs hooks and supports skill-first onboarding', async t => {
   const home = await mkdtemp(join(tmpdir(), 'doomer-install-'));
   t.after(() => rm(home, { recursive: true, force: true }));
