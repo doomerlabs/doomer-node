@@ -35,7 +35,7 @@ Setup selects Claude Code, Codex, both, or standalone reviews, then:
 5. Offers global source-upload approval separately: “Allow Doomer reviews to
    upload source snapshots to Doomer (https://doomer.ai)?”
 
-After setup, the summary identifies the selected agents and whether source uploads are approved. Open `/hooks` in each agent to review and trust Doomer. Start a new session if the hooks have not loaded, then give the agent a small coding task. Doomer reviews the changes automatically; a completed review verifies activation. Declining uploads keeps automatic reviews off without undoing installation.
+After setup, the summary identifies the selected agents and whether source uploads are approved. Open `/hooks` in each agent to review and trust Doomer. Start a new session if the hooks have not loaded, then give the agent a small coding task. Doomer reviews the changes automatically; a completed review verifies activation. Declining upload approval exits setup for automatic reviews.
 
 The installer also downloads the Go CLI from the official stable channel and
 verifies its archive checksum. It installs versioned executables beside a `~/.local/bin/doomer` symlink, for
@@ -53,16 +53,33 @@ Automatic reviews require a Go CLI with the foreground `watch` command and
 reports automatic reviews unavailable. Use a compatible released CLI, or an
 explicitly selected candidate for authorized source testing.
 
-Explicit agent selection supports noninteractive installation:
+In a terminal, install and onboard display a checkbox picker. Detected agents
+are checked on the first run, and later runs preselect the previous selection.
+Use the arrow keys to move and Space or Enter to switch an agent on or off.
+Press Enter on the Continue row to confirm the listed agents. Turn all agents
+off to install without automatic review hooks.
+
+Without a terminal, setup uses the previous selection or detected agents. If
+neither is available, specify an agent or use `--no-hooks`. Setup with hooks
+requires existing upload approval or an explicit `--approve-uploads` flag.
+Use explicit flags to make scripted installs independent of detection:
 
 ```sh
-npx @doomerlabs/doomer install --agent claude,codex
+npx @doomerlabs/doomer install --agent claude,codex --approve-uploads
 npx @doomerlabs/doomer install --no-hooks
 ```
 
-A human can add `--approve-uploads` to authorize all Doomer review uploads to
-the configured service, across repositories and agents. Agents must not supply approval flags
-without the user's authorization. Native hook trust is always user managed.
+When interactive setup needs upload approval, **Open browser** lets you sign in
+and approve uploads so reviews appear in your Doomer account. The terminal
+prints the approval link and code, which you can use from another device over
+SSH. **No, exit setup** cancels onboarding. Native reviewer permissions remain a
+separate decision.
+
+For headless setup, a human can add `--approve-uploads` to authorize all Doomer
+review uploads to the configured service, across repositories and agents. The
+flag approves uploads without connecting a new account. Agents must not supply
+approval flags without the user's authorization. Native hook trust is always
+user managed.
 
 The installer pins a reviewed skill commit in `src/skill-source.js`; it does not
 follow a moving feature branch. Update that pin only alongside onboarding
@@ -105,12 +122,13 @@ Use `doomer review --help` for review options, upload permission, and result han
 
 Run `npx @doomerlabs/doomer doctor` for a readable diagnosis. `--json` includes structured `issues`, `next`, `uploadApproved` and `activation`. `ready` means installed configuration; it does not prove hook trust, upload consent or a completed review.
 
-Doctor checks upload approval for the service the watcher would use in the current
+Setup, upload approval, revoke, and doctor select the service the watcher would use in the current
 directory: `--api-url`, the nearest `.doomer.env`, `DOOMER_API_URL`, the saved
 service, then the default. It prints the selected service and its source;
 JSON includes `api`, `apiSource`, and `apiConfigFile` for a directory setting.
 Directory settings are read as literal data without executing `.envrc` or
-printing credentials. A nearer `.doomer.env` replaces farther ancestor settings.
+printing credentials. A nearer `.doomer.env` replaces farther ancestor settings. Invalid or unreadable
+settings produce an actionable doctor issue and prevent authorization changes.
 
 Missing CLI or skill: rerun `onboard`. Missing hooks: run `install-hooks --agent codex` (or `claude`). Disabled hooks or invalid settings: follow the reported settings-file action; repair preserves those user choices. PATH conflicts: use the reported absolute executable or fix PATH instead of reinstalling. Missing upload approval: rerun `onboard` and review the consent prompt. Setup errors name the failed step and provide a command to resume after fixing it.
 
@@ -184,8 +202,17 @@ with `npm pack` and run `npx --yes ./doomerlabs-doomer-VERSION.tgz uninstall`.
 
 Uninstall disables the managed hooks, stops its native watchers, removes the
 global `doomer` link when it still points to a managed executable, removes the
-new global `doomer` skill, and deletes the private runtimes, source snapshots,
-credentials, and local installation state. It does not remove hosted reviews,
+selected installation's `doomer` skills, and deletes its private runtimes,
+source snapshots, saved upload grants, and local installation state. Skills
+actually shared with another installation are retained; isolated development
+skills and hooks are left alone. It removes manager-owned Claude permission
+rules and exact recognized or recorded Codex authorization blocks. Customized
+or shared Codex policy is preserved and reported. Permission-cleanup failures
+retain the installation state and CLI so cleanup can be retried.
+
+Credentials inside the manager home are deleted with that home. External login
+credentials (for example, a separate `DOOMER_CONFIG_DIR`) are preserved; uninstall
+does not revoke account sessions on the server. It does not remove hosted reviews,
 the old `doomer-review` skill, unrelated agent settings, or recovery backups.
 If you replaced the global command yourself, uninstall reports and preserves
 that replacement. Uninstall reloads removed hooks in a reachable local Codex
@@ -282,6 +309,82 @@ npx @doomerlabs/doomer@beta install
 ```
 
 The npm installer version and Go CLI version are independent. This beta
-installer pins Go CLI `2026.11.13.1-beta.2` by default, so no CLI version flag is
+installer pins Go CLI `2026.11.16.1-beta.1` by default, so no CLI version flag is
 needed. Reinstalling or updating this package retains its tested Go CLI version.
 Explicit local development binaries continue to override the published default.
+
+### Codex reviewer authorization
+
+Codex setup separately proposes a reviewer policy for the verified Doomer account,
+API, credential directory/profile, and saved repository scope. Upload approval and
+native hook trust do not authorize this settings change. `install` and `onboard`
+return `codexReviewPolicy` with the full proposal and its install/decline commands.
+Interactive setup asks before applying it. For noninteractive setup, review that
+proposal, then rerun the following command using its exact digest:
+
+```sh
+npx @doomerlabs/doomer onboard --agent codex --reviewer-policy allow --reviewer-policy-proposal DIGEST
+```
+
+Use `decline` to save an explicit refusal; an unanswered proposal stays pending. Existing upload approval
+is reused during recovery. Unrelated policies and settings are preserved.
+
+`doctor --json` reports reviewer authorization as unverified and directs recovery
+through `onboard` without making account-verification network calls. Configured
+policy and a successful configuration reload still leave activation unverified: verify an
+ordinary Doomer results/finding operation in the actual running Codex session.
+A pending-policy proposal never grants permission to bypass an approval denial.
+
+### Reviewer authorization during updates
+
+`update` inspects the Codex reviewer policy for the selected service and account,
+just like `onboard`. Missing or outdated policy requires a separate decision;
+noninteractive output includes the proposal and its digest. After reviewing it,
+use `update --reviewer-policy allow --reviewer-policy-proposal DIGEST` (or
+`decline`). Existing declines are preserved.
+
+Review upload consent includes source snapshots, task context, and finding
+statuses, agreement flags, explanations, and supporting evidence. JSON diagnostics
+report `reviewerAuthorization.uploadConsent`, `reviewerAuthorization.policy`, and
+`reviewerAuthorization.activation` separately. Policy installation is not proof
+that a running Codex session loaded it: reload or restart as instructed, then
+verify a normal review and finding response. No setup command disables automatic
+approval review or grants native hook trust.
+
+### Claude review command permission
+
+Onboarding separately offers narrow Claude Code allow rules for the installed
+Doomer executable's `watch hypotheses`, `watch findings respond`, `watch findings ls`,
+`watch results`, and `watch notice-ack` commands with `--control`. These permit
+assessment and finding decisions with explanations through an active watcher;
+they do not authorize installation, arbitrary shell commands, or override deny rules.
+Review the displayed rules before accepting. For noninteractive onboarding, use
+`--claude-review-permission allow` or `--claude-review-permission decline`. Saved
+declines survive updates; only an explicit new decision changes them. Uninstall
+removes only rules added by this installation. Existing user rules are preserved.
+The opt-in also adds a scoped `autoMode.allow` explanation for these operations,
+retaining `$defaults` and existing rules. Managed hard-deny rules still apply.
+
+## Iterate from source on another machine
+
+[Local iteration](docs/local-iteration.md) describes bundling all three local checkouts, leaving production, installing the bundled Node manager/CLI/skill, and logging in to a development service without publishing Doomer to npm.
+
+`install` and `onboard` accept `--skill-source /absolute/path/to/skills` to install a local checkout containing `skills/doomer/SKILL.md` through the official skills CLI. This is an explicit per-run override; ordinary installs and updates retain the reviewed production skill pin.
+
+### Codex account profiles and repair
+
+Install, onboard, update, and install-hooks refresh the current Codex home and
+existing Doomer hook installations under macOS Codex Accounts profiles. Empty
+account profiles are not automatically enrolled. Existing unrelated hooks,
+permissions, disabled-hook settings, and native trust are preserved.
+
+`npx @doomerlabs/doomer@beta doctor --json` reports each discovered profile and
+inspects its current reviewer policy without applying policy decisions. Policy
+inspection may contact the configured service to verify account identity; a
+failure is reported as unknown authorization, not as a missing policy.
+
+`npx @doomerlabs/doomer@beta doctor --fix` repairs hooks for already-configured
+agents using the installed compatible CLI. It does not install missing software,
+accept upload or reviewer permissions, enable disabled hooks, or modify trust.
+Review changed hooks in the affected account profiles and restart those sessions;
+configuration checks do not prove that a running session loaded the hooks.

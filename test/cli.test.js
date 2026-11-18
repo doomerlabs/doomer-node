@@ -36,3 +36,32 @@ test('exact CLI version is hidden and rejects unsupported use before setup', asy
     env: { ...process.env, DOOMER_NATIVE_BINARY: '/unused/local/cli' },
   }), /cannot be combined with a local development CLI/);
 });
+
+
+test('reviewer decision flags fail before unrelated commands or agent setup', async () => {
+  for (const command of ['doctor', 'upgrade', 'uninstall', 'update']) {
+    await assert.rejects(exec(process.execPath, [entry, command, '--reviewer-policy-proposal', 'digest']), /requires a reviewer-policy decision/);
+  }
+  await assert.rejects(exec(process.execPath, [entry, 'onboard', '--reviewer-policy-proposal', 'digest']), /requires a reviewer-policy decision/);
+  for (const selection of ['--no-hooks', '--agent=claude']) {
+    await assert.rejects(exec(process.execPath, [entry, 'onboard', selection, '--reviewer-policy', 'allow', '--reviewer-policy-proposal', 'digest']), /requires selecting codex/);
+  }
+  assert.match((await exec(process.execPath, [entry, '--help', '--reviewer-policy', 'allow'])).stdout, /Usage:/);
+  assert.match((await exec(process.execPath, [entry, '--version', '--reviewer-policy', 'allow'])).stdout, /^\d+\./);
+});
+
+test('local skill source only applies to setup and must be an absolute checkout', async () => {
+  for (const command of ['doctor', 'update', 'upgrade', 'install-hooks', 'uninstall']) {
+    await assert.rejects(exec(process.execPath, [entry, command, '--skill-source', '/tmp/source']), /supported only by install and onboard/);
+  }
+  for (const command of ['install', 'onboard']) {
+    await assert.rejects(exec(process.execPath, [entry, command, '--agent', 'claude', '--skill-source', 'relative/source']), /absolute local checkout/);
+  }
+});
+
+
+test('doctor repair flag is rejected for other commands', async () => {
+  for (const command of ['install', 'update', 'uninstall']) {
+    await assert.rejects(exec(process.execPath, [entry, command, '--fix']), /supported only by doctor/);
+  }
+});

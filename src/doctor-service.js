@@ -1,4 +1,5 @@
-import { open, realpath } from 'node:fs/promises';
+import { open, realpath, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { DEFAULT_API, endpoint } from './api.js';
 
@@ -15,7 +16,11 @@ export async function doctorService({ explicit, saved, cwd = process.cwd(), env 
     const candidate = join(directory, '.doomer.env');
     let handle;
     try {
-      handle = await open(candidate, 'r');
+      // Follow regular-file symlinks like the native watcher, but reject special
+      // files before opening. NONBLOCK also protects against a concurrent FIFO swap.
+      const before = await stat(candidate);
+      if (!before.isFile() || before.size > limit) throw new Error('Invalid .doomer.env: expected a regular file of at most 64 KiB.');
+      handle = await open(candidate, constants.O_RDONLY | (constants.O_NONBLOCK || 0));
       const info = await handle.stat();
       if (!info.isFile() || info.size > limit) throw new Error('Invalid .doomer.env: expected a regular file of at most 64 KiB.');
       const buffer = Buffer.alloc(limit + 1);
@@ -30,7 +35,10 @@ export async function doctorService({ explicit, saved, cwd = process.cwd(), env 
       file = candidate;
       break;
     } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
+      if (error.code !== 'ENOENT') {
+        if (error.code) throw new Error(`Cannot read .doomer.env (${error.code}).`);
+        throw error;
+      }
     } finally { await handle?.close(); }
     const parent = dirname(directory);
     if (parent === directory) break;
@@ -38,7 +46,11 @@ export async function doctorService({ explicit, saved, cwd = process.cwd(), env 
   }
   const choices = [[explicit, 'flag'], [values?.DOOMER_API_URL, 'directory'], [env.DOOMER_API_URL, 'environment'], [saved, 'saved'], [DEFAULT_API, 'default']];
   const [api, apiSource] = choices.find(([value]) => value);
-  return { api: endpoint(api), apiSource, ...(apiSource === 'directory' ? { apiConfigFile: file } : {}) };
+  let normalized;
+  try { normalized = endpoint(api); }
+  catch { throw new Error('Invalid Doomer service URL: use HTTPS (HTTP is allowed only on loopback).'); }
+  const credentialDirectory = values && Object.hasOwn(values, 'DOOMER_CONFIG_DIR') ? values.DOOMER_CONFIG_DIR : env.DOOMER_CONFIG_DIR;
+  return { api: normalized, apiSource, ...(apiSource === 'directory' ? { apiConfigFile: file } : {}), ...(credentialDirectory ? { credentialDirectory } : {}) };
 }
 
 function parseDirectoryEnvironment(text) {

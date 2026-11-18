@@ -85,3 +85,67 @@ test('doctor CLI checks consent for its displayed service and honors --api-url w
   assert.equal(await readFile(stateFile, 'utf8'), JSON.stringify(state));
   assert.equal(formatDoctor(production, { color: false }).includes(file), true);
 });
+
+test('doctor returns actionable JSON for invalid configuration without exposing values', async t => {
+  const { root, cwd, file } = await fixture(t);
+  const stateFile = join(root, 'state.json');
+  const state = JSON.stringify({ version: 1, agents: [], grants: [] });
+  await writeFile(stateFile, state);
+  const env = { ...process.env, DOOMER_HOME: root, DOOMER_DEV_INSTALL: '0' };
+  for (const contents of ['DOOMER_API_URL=https://user:private-secret@example.test', 'DOOMER_TOKEN=private-secret\nINVALID=private-secret']) {
+    await writeFile(file, contents);
+    const result = await exec(process.execPath, [entry, 'doctor', '--json'], { cwd, env }).catch(error => error);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.ready, false);
+    assert.equal(report.reviewerAuthorization.uploadConsent, 'unverified');
+    assert.equal(report.issues[0].code, 'service_config_invalid');
+    assert.match(report.next, /Fix/);
+    assert.ok(!result.stdout.includes('private-secret'));
+    await assert.rejects(exec(process.execPath, [entry, 'revoke'], { cwd, env }));
+    assert.equal(await readFile(stateFile, 'utf8'), state);
+  }
+});
+
+test('special configuration files fail promptly and regular symlink targets retain native routing', { skip: process.platform === 'win32', timeout: 5000 }, async t => {
+  const { root, cwd, file } = await fixture(t);
+  await exec('mkfifo', [file]);
+  // Use a subprocess timeout so a regression cannot leave the test runner hung.
+  const script = `import { doctorService } from ${JSON.stringify(new URL('../src/doctor-service.js', import.meta.url).href)}; await doctorService();`;
+  await assert.rejects(exec(process.execPath, ['--input-type=module', '-e', script], { cwd, timeout: 1500 }), error => {
+    assert.equal(error.killed, false);
+    assert.match(error.stderr, /regular file/);
+    return true;
+  });
+  await rm(file);
+  await mkdir(file);
+  await assert.rejects(doctorService({ cwd }), /regular file/);
+  await rm(file, { recursive: true });
+  const target = join(root, 'routing');
+  await writeFile(target, 'DOOMER_API_URL=https://directory.example/api');
+  await symlink(target, file);
+  assert.equal((await doctorService({ cwd })).api, 'https://directory.example/api');
+});
+
+test('configure, grant, doctor and revoke agree on directory service and preserve other grants', async t => {
+  const { root, cwd, file } = await fixture(t);
+  const stateFile = join(root, 'state.json');
+  const local = 'http://localhost:3000/api';
+  const production = 'https://doomer.ai/api';
+  const credentials = join(root, 'credentials');
+  await writeFile(stateFile, JSON.stringify({ version: 1, agents: [], api: local, grants: [{ scope: 'global', api: local }] }));
+  await writeFile(file, `DOOMER_API_URL=${production}\nDOOMER_CONFIG_DIR=${credentials}\n`);
+  const env = { ...process.env, DOOMER_HOME: root, DOOMER_DEV_INSTALL: '0', DOOMER_API_URL: local };
+  const script = `import { configure, grant } from ${JSON.stringify(new URL('../src/setup.js', import.meta.url).href)}; await grant(); await configure([], '', {});`;
+  await exec(process.execPath, ['--input-type=module', '-e', script], { cwd, env });
+  const state = JSON.parse(await readFile(stateFile, 'utf8'));
+  assert.equal(state.api, production);
+  assert.equal(state.credentialDirs[production], credentials);
+  assert.deepEqual(state.grants.map(g => g.api).sort(), [local, production].sort());
+  const diagnosed = await exec(process.execPath, [entry, 'doctor', '--json'], { cwd, env }).catch(error => error);
+  assert.equal(JSON.parse(diagnosed.stdout).uploadApproved, true);
+  await exec(process.execPath, [entry, 'revoke'], { cwd, env });
+  assert.deepEqual(JSON.parse(await readFile(stateFile, 'utf8')).grants.map(g => g.api), [local]);
+  await writeFile(file, 'BAD=private-secret');
+  await assert.rejects(exec(process.execPath, ['--input-type=module', '-e', script], { cwd, env }));
+  assert.deepEqual(JSON.parse(await readFile(stateFile, 'utf8')).grants.map(g => g.api), [local]);
+});

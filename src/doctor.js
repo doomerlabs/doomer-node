@@ -70,9 +70,16 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
   for (const hook of result.hooks) {
     const configured = hook.configured && hook.enabled;
     const name = hook.agent === 'claude' ? 'Claude Code' : 'Codex';
+    for (const profile of hook.profiles || []) rows.push(`                 ${profile.file}: ${profile.error || (profile.enabled === false ? (profile.configured ? 'disabled' : 'disabled; hooks need repair') : profile.configured ? 'configured; activation unverified' : 'hooks need repair')}`);
     row(name, configured ? 'Hooks configured; activation unverified' : hook.error || (hook.enabled === false ? 'Hooks disabled' : 'Hooks need repair'), configured ? 'ok' : 'error');
   }
+  if (result.hooks.some(h => h.agent === 'claude')) row('Claude review', result.claudeReviewPermission || 'unverified', result.claudeReviewPermission === 'allow' ? 'ok' : 'warning');
   if (!result.automaticReviews) row('Watch', 'Current watch command unavailable', 'error');
+  if (result.reviewerAuthorization) {
+    const auth = result.reviewerAuthorization;
+    row('Consent', auth.uploadConsent === 'approved' ? 'Snapshots, task context, finding decisions and explanations approved' : auth.uploadConsent === 'unverified' ? 'Unverified' : 'Not approved', auth.uploadConsent === 'approved' ? 'ok' : 'warning');
+    if (auth.policy !== 'not_required') row('Review policy', `${auth.policy}; activation ${auth.activation}`, auth.policy === 'installed' ? 'ok' : 'warning');
+  }
   rows.push('', paint(result.ready ? 'Installation ready' : 'Installation needs attention', result.ready ? '32;1' : '33;1'));
   if (!result.onPath && result.commandInstalled) rows.push(`Add ${dirname(result.globalCommand)} to the front of PATH to use this installation.`);
   for (const issue of result.issues || []) {
@@ -86,25 +93,38 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
 }
 
 export function formatSetup(result) {
-  const names = result.agents.map(a => a === 'claude' ? 'Claude Code' : 'Codex').join(' and ');
-  const lines = [result.ready ? `Doomer is set up${names ? ` for ${names}` : ' for manual reviews'}.` : 'Doomer setup needs attention.',
-    `CLI: ${result.executable}`,
-    result.uploadApproved ? 'Source uploads: approved for this service.' : 'Source uploads: off.'];
-  if (result.issues.length) {
-    for (const issue of result.issues) {
-      lines.push('', issue.message);
-      if (issue.command) lines.push(`Run: ${issue.command}`);
-      if (issue.instruction) lines.push(issue.instruction);
-    }
+  const labels = result.agents.map(agent => agent === 'claude' ? 'Claude Code' : 'Codex');
+  const names = labels.join(' and ');
+  const lines = [result.ready ? `Doomer is set up${names ? ` for ${names}` : ' without automatic review hooks'}.` : 'Doomer setup needs attention.'];
+  const pathIssue = result.issues.find(issue => issue.code === 'command_not_on_path');
+  const setupIssues = result.issues.filter(issue => issue !== pathIssue);
+  for (const issue of setupIssues) {
+    lines.push('', issue.message);
+    if (issue.command) lines.push(`Run: ${issue.command}`);
+    if (issue.instruction) lines.push(issue.instruction);
   }
-  if (result.agents.length) {
-    lines.push('', 'Next: open /hooks in your agent to review and trust Doomer.');
-    if (result.codexReload?.restartRequired) lines.push('Codex: start a new session to load the hooks.');
-    if (result.agents.includes('claude')) lines.push('Claude Code: start a new session if the hooks have not loaded.');
-    if (result.uploadApproved) lines.push('Then ask your agent for a small coding change. Doomer will review it automatically; a completed review confirms activation.');
-  } else {
-    lines.push('', result.next);
-    if (result.enableAutomaticReviews) lines.push('', 'Enable automatic reviews:', result.enableAutomaticReviews.command, result.enableAutomaticReviews.instruction);
+
+  if (result.ready && result.uploadApproved && labels.length) {
+    lines.push('', 'Get your first review');
+    lines.push(`  1. Open the repository you want reviewed in ${labels.join(' or ')}.`);
+    if (result.agents.includes('claude')) lines.push('     Claude Code: start a fresh session to load the hooks.');
+    if (result.codexReload?.restartRequired) lines.push('     Codex: start a new session to load the hooks.');
+    lines.push('  2. In that session, open /hooks, find Doomer, and trust its hooks.');
+    lines.push('  3. Ask your agent to make a small code change. A completed review confirms setup.');
+  } else if (result.ready && labels.length) {
+    lines.push('', 'After approving uploads, open /hooks in your agent and trust Doomer.');
+    if (result.agents.includes('claude')) lines.push('Claude Code: start a fresh session to load the hooks.');
+  } else if (!labels.length && result.enableAutomaticReviews) {
+    lines.push('', 'Enable automatic reviews:', result.enableAutomaticReviews.command, result.enableAutomaticReviews.instruction);
+  }
+  if (result.agents.includes('claude') && !['allow', 'decline'].includes(result.claudeReviewPermission)) {
+    lines.push('', 'Claude may ask for permission to run Doomer review commands.');
+  }
+  if (pathIssue) {
+    lines.push('', 'Optional for running `doomer` from your shell. The hooks already use the installed CLI path.');
+    if (pathIssue.instruction) lines.push(pathIssue.instruction);
+  } else if (result.ready && result.executable) {
+    lines.push('', `CLI: ${result.executable}`);
   }
   return lines.join('\n');
 }

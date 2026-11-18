@@ -25,21 +25,42 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
     } else add('cli_incompatible', 'This CLI does not support automatic review hooks.', managerCommand('update'));
   }
   for (const hook of result.hooks) {
-    if (hook.error) add('hook_config_invalid', `${hook.agent} settings could not be read: ${hook.error}`, null, `Fix the settings file at ${hook.file}, then run ${managerCommand('install-hooks', { agents: [hook.agent] })}.`);
-    else if (!hook.configured) add('hooks_missing', `${hook.agent} hooks need repair.`, managerCommand('install-hooks', { agents: [hook.agent] }));
+    if (hook.error) {
+      const failures = (hook.profiles || []).filter(p => p.error);
+      if (!failures.length) failures.push(hook);
+      for (const profile of failures) add('hook_config_invalid', `${hook.agent} settings could not be read at ${profile.file}: ${profile.error}`, null, `Fix the settings file at ${profile.file}, then run ${managerCommand('install-hooks', { agents: [hook.agent] })}.`);
+    }
+    else if (!hook.configured) add('hooks_missing', `${hook.agent} hooks need repair in ${(hook.profiles || [hook]).filter(p => !p.configured).map(p => p.file).join(', ')}.`, managerCommand('install-hooks', { agents: [hook.agent] }));
     else if (!hook.enabled) add('hooks_disabled', `${hook.agent} hooks are disabled in agent settings.`, null, `Enable hooks in ${hook.agent}, then review and trust Doomer in /hooks.`);
+  }
+  if (result.codexReviewPolicy?.error) add('reviewer_policy_unavailable', `Reviewer policy inspection could not complete: ${result.codexReviewPolicy.error}`, managerCommand('doctor', { api }), 'Authorization is unknown, not missing. Retry this read-only diagnostic with access to the configured service and credential files; request normal sandbox permission if required. Do not reinstall or change permissions based on this inspection failure.');
+  else if (result.codexReviewPolicy?.policies.some(p => p.state === 'declined')) {
+    add('reviewer_policy_declined', 'Codex reviewer authorization was declined.', null, 'The saved decline is preserved. Revisit that decision explicitly before enabling automatic review authorization.');
+  }
+  if (!result.codexReviewPolicy?.error && result.codexReviewPolicy?.policies.some(p => !['configured', 'declined'].includes(p.state))) {
+    add('reviewer_policy_missing', 'Codex reviewer authorization needs a separate decision.', managerCommand('onboard', { agents, api }), 'Use “View exact changes” to inspect the policy before allowing it. The full proposal is also available with --json.');
   }
   if (!uploadApproved) add('uploads_not_approved', 'Source uploads are not approved for this service. Automatic reviews will not run.', managerCommand('onboard', { agents, api }), 'Review the upload prompt and approve only if you want reviews. Declining keeps uploads off.');
   if (!result.onPath && result.commandInstalled) add('command_not_on_path', 'Your shell does not select this Doomer installation.', null, `Add ${result.globalCommand.slice(0, Math.max(result.globalCommand.lastIndexOf('/'), result.globalCommand.lastIndexOf('\\')))} to the front of PATH, or use ${shellQuote(result.globalCommand)} directly.`);
   const activation = agents.length ? 'unverified' : 'not_required';
   const next = issues.length ? `${issues[0].message} ${issues[0].command ? `Run: ${issues[0].command}. ` : ''}${issues[0].instruction || ''}`.trim()
     : agents.length ? 'Open /hooks in your agent and review and trust the Doomer hooks. Start a new session if needed, then give the agent a small coding task. A completed review verifies activation.'
-    : `Run ${shellQuote(result.globalCommand)} review for a manual review. This command authorizes uploading the repository source.`;
+    : 'Standalone Quick review is not supported. Configure a coding-agent hook to enable Quick review.';
   const enableAutomaticReviews = agents.length ? undefined : {
     command: managerCommand('onboard', { api }),
     instruction: 'Choose Codex, Claude Code, or both, review upload permission, then review and trust the hooks in your agent.',
   };
-  return { issues, uploadApproved, activation, reviewConfigured: result.ready && uploadApproved, next, enableAutomaticReviews };
+  const policyStates = result.codexReviewPolicy?.policies.map(p => p.state) || [];
+  const reviewerAuthorization = {
+    uploadConsent: uploadApproved ? 'approved' : 'not_approved',
+    policy: !agents.includes('codex') ? 'not_required'
+      : result.codexReviewPolicy?.error ? 'unverified'
+      : policyStates.length && policyStates.every(state => state === 'configured') ? 'installed'
+      : policyStates.some(state => !['configured', 'declined'].includes(state)) ? 'missing_or_outdated'
+      : policyStates.includes('declined') ? 'declined' : 'unverified',
+    activation: agents.includes('codex') ? 'unverified' : 'not_required',
+  };
+  return { issues, uploadApproved, activation, reviewerAuthorization, reviewConfigured: agents.length > 0 && result.ready && uploadApproved && !issues.some(i => i.code.startsWith('reviewer_policy_')), next, enableAutomaticReviews };
 }
 
 export class SetupError extends Error {

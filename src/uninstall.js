@@ -1,11 +1,13 @@
-import { readFile, readdir, lstat, readlink, rm } from 'node:fs/promises';
+import { readFile, readdir, lstat, readlink, realpath, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { agents, hookFile, globalSkillPaths, removeHooks } from './hooks.js';
 import { paths, nativePath, developmentInstall, packageRoot, readState, otherState, readJSON, writeJSON, changeState, exists, locked, run, hash } from './system.js';
 import { endpoint } from './api.js';
+import { removeClaudeReviewPermission } from './claude-policy.js';
 import { reloadCodexHooks } from './codex.js';
+import { removeReviewerPolicies } from './reviewer-policy.js';
 
 const inside = (root, path) => {
   if (typeof path !== 'string' || !isAbsolute(path)) return false;
@@ -87,8 +89,12 @@ export async function uninstall() {
   const cleanup=async()=>{
   if (homeExists) {
     await writeJSON(join(p.home,'uninstalling.json'),{startedAt:new Date().toISOString()});
-    if(await exists(p.state)) await changeState(s=>{s.grants=[];});
+
   }
+  // Keep the ownership ledger and executable until permission cleanup succeeds.
+  await removeClaudeReviewPermission();
+  result.codexPolicies = await removeReviewerPolicies(state);
+  if(await exists(p.state)) await changeState(s=>{s.grants=[];});
   const hookFiles=[...new Set([...(state.hookFiles||[]),...agents.map(hookFile)])];
   for (const file of hookFiles) if(await removeHooks(file)) result.removedHooks.push(file);
   if(result.removedHooks.some(file=>basename(file)==='hooks.json'))result.codexReload=await reloadCodexHooks();
@@ -98,9 +104,14 @@ export async function uninstall() {
   const sorted=await Promise.all(skills.map(async path=>({path,link:await exists(path)&&(await lstat(path)).isSymbolicLink()})));
   sorted.sort((a,b)=>Number(b.link)-Number(a.link));
   const other = await otherState();
-  const sharedSkillInUse = other.runtime && await exists(other.runtime);
-  for (const {path} of sorted) if(!sharedSkillInUse && await removeSkill(path)) result.removedSkills.push(path);
-  if (sharedSkillInUse) result.preservedSharedSkill = true;
+  const otherSkills = other.runtime && await exists(other.runtime)
+    ? (other.skillPaths ?? globalSkillPaths()) : [];
+  const identity = async path => { try { return await realpath(path); } catch (error) { if (error.code === 'ENOENT') return resolve(path); throw error; } };
+  const sharedTargets = new Set(await Promise.all(otherSkills.map(identity)));
+  for (const {path} of sorted) {
+    if (sharedTargets.has(await identity(path))) { result.preservedSharedSkill = true; continue; }
+    if (await removeSkill(path)) result.removedSkills.push(path);
+  }
   Object.assign(result,await removeGlobalCommand(p.home,state));
   if(removeData) {await rm(p.home,{recursive:true,force:true});result.removedData=true;}
   return result;

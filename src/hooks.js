@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir, lstat } from 'node:fs/promises';
 import { atomicWrite, quote, readJSON, locked, paths, nativePath, changeState, developmentInstall } from './system.js';
 
 export const agents = ['claude', 'codex'];
@@ -13,6 +13,33 @@ export function hookFile(agent) {
   if (agent === 'codex') return join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'hooks.json');
   throw new Error(`Unsupported agent ${agent}. Choose claude or codex.`);
 }
+// Update existing Codex Accounts profiles as well as the invoking environment.
+// Empty profiles are not enrolled merely because their directory exists.
+export async function hookFiles(agent) {
+  const files = [hookFile(agent)];
+  if (agent !== 'codex') return files;
+  const candidates = [join(homedir(), '.codex', 'hooks.json')];
+  const root = join(homedir(), 'Library', 'Application Support', 'Codex Accounts', 'profiles');
+  let entries = [];
+  try { entries = await readdir(root, { withFileTypes: true }); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  for (const entry of entries) {
+    if (entry.isDirectory()) candidates.push(join(root, entry.name, 'home', 'hooks.json'));
+  }
+  for (const file of candidates) {
+    if (files.includes(file)) continue;
+    let content;
+    try {
+      if (!(await lstat(file)).isFile()) continue;
+      content = await readFile(file, 'utf8');
+    } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    // Include malformed existing Doomer files so diagnostics report them and
+    // repair refuses to overwrite them, rather than silently skipping a profile.
+    if (content.includes(marker()) || content.includes('--managed-task-adapter')) files.push(file);
+  }
+  return files;
+}
+
 export function hookCommand(agent, executable = nativePath()) {
   if (process.platform === 'win32') {
     if (/["%\r\n]/.test(executable)) throw new Error('Unsupported characters in Windows installation path');
@@ -90,8 +117,7 @@ export function mergeHooks(config, agent, executable = nativePath()) {
   }
   return next;
 }
-export async function installHooks(agent, executable = nativePath()) {
-  const file = hookFile(agent);
+async function installHookFile(agent, executable, file) {
   await changeState(state => { delete state.hookRoot; state.hookFiles = [...new Set([...(state.hookFiles || []), file])]; });
   return locked(file, async () => {
     let original;
@@ -104,8 +130,7 @@ export async function installHooks(agent, executable = nativePath()) {
     return { agent, file, changed: true };
   });
 }
-export async function checkHooks(agent, executable = nativePath()) {
-  const file = hookFile(agent);
+async function checkHookFile(agent, executable, file) {
   try {
     const config = await readJSON(file, {});
     validate(config);
@@ -113,4 +138,18 @@ export async function checkHooks(agent, executable = nativePath()) {
     const configured = eventsFor(agent).every(event => (config.hooks?.[event] || []).some(group => (!group.matcher || group.matcher === '.*') && group.hooks.some(h => h.type === 'command' && h.command === command && h.async !== true)));
     return { agent, file, configured, enabled: config.disableAllHooks !== true, activation: 'unverified' };
   } catch (error) { return { agent, file, configured: false, error: error.message }; }
+}
+
+export async function installHooks(agent, executable = nativePath()) {
+  const results = [];
+  for (const file of await hookFiles(agent)) results.push(await installHookFile(agent, executable, file));
+  return { agent, file: hookFile(agent), changed: results.some(result => result.changed), profiles: results };
+}
+
+export async function checkHooks(agent, executable = nativePath()) {
+  const profiles = [];
+  for (const file of await hookFiles(agent)) profiles.push(await checkHookFile(agent, executable, file));
+  return { agent, file: hookFile(agent), configured: profiles.every(p => p.configured),
+    enabled: profiles.every(p => p.enabled !== false), activation: 'unverified', profiles,
+    ...(profiles.find(p => p.error) ? { error: profiles.find(p => p.error).error } : {}) };
 }

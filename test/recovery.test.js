@@ -20,7 +20,22 @@ test('configured hooks do not imply upload consent or activation', () => {
   assert.match(text, /set up for Codex/);
   assert.match(text, /open \/hooks/);
   assert.match(text, /start a new session/);
-  assert.match(text, /completed review confirms activation/);
+  assert.match(text, /completed review confirms setup/);
+  const optionalPath = installationGuidance({ ...state, onPath: false }, { uploadApproved: true });
+  const both = formatSetup({ ...state, ...optionalPath, agents: ['claude', 'codex'], claudeReviewPermission: 'allow', codexReload: { reloaded: true } });
+  assert.match(both, /1\. Open the repository you want reviewed in Claude Code or Codex\./);
+  assert.match(both, /2\. In that session, open \/hooks/);
+  assert.match(both, /3\. Ask your agent to make a small code change\./);
+  assert.doesNotMatch(both, /Codex: start a new session/);
+  assert.ok(both.indexOf('Optional for running') > both.indexOf('3. Ask your agent'));
+  assert.doesNotMatch(formatSetup({ ...state, ...result }), /Get your first review/);
+  const unapprovedClaude = { ...installed(), agents: ['claude'], hooks: [{ agent: 'claude', file: '/tmp/settings.json', configured: true, enabled: true }] };
+  const unapprovedText = formatSetup({ ...unapprovedClaude, ...installationGuidance(unapprovedClaude, { uploadApproved: false }) });
+  assert.match(unapprovedText, /Run: .*onboard .*--agent claude/);
+  assert.match(unapprovedText, /Automatic reviews will not run/);
+  assert.match(unapprovedText, /After approving uploads, open \/hooks/);
+  assert.match(unapprovedText, /Claude Code: start a fresh session/);
+
 });
 
 test('repair guidance distinguishes missing hooks, disabled hooks and invalid settings', () => {
@@ -81,10 +96,13 @@ test('standalone setup offers opt-in automatic reviews without granting consent 
     assert.match(action.command, /--api-url https:\/\/service.example\/api/);
     assert.doesNotMatch(action.command, /--approve-uploads|--agent|--no-hooks/);
     assert.equal(guidance.activation, 'not_required');
+    assert.equal(guidance.reviewConfigured, false);
+    if (uploadApproved) assert.match(guidance.next, /Standalone Quick review is not supported/);
     for (const format of [formatSetup, formatDoctor]) {
       const text = format({ ...state, ...guidance }, { color: false });
       assert.ok(text.includes('Enable automatic reviews:\n' + action.command));
       assert.match(text, /review upload permission/);
+      assert.doesNotMatch(text, /set up for manual reviews/);
     }
   }
   assert.equal(installationGuidance(installed(), { uploadApproved: true }).enableAutomaticReviews, undefined);
@@ -96,4 +114,55 @@ test('recovery commands preserve the selected installer channel', () => {
   assert.match(managerCommand('onboard', { channel: 'latest' }), /npx @doomerlabs\/doomer onboard/);
   assert.match(managerCommand('install-hooks', { channel: 'beta' }), /npx @doomerlabs\/doomer@beta install-hooks/);
   assert.throws(() => managerCommand('onboard', { channel: 'invalid' }), /Invalid installer channel/);
+});
+
+
+test('reviewer diagnostics distinguish consent, installed policy and unverified activation', () => {
+  for (const [state, policy, issue] of [['configured','installed',undefined], ['missing','missing_or_outdated','reviewer_policy_missing'], ['declined','declined','reviewer_policy_declined']]) {
+    const result = installationGuidance({ ...installed(), codexReviewPolicy: { policies: [{state}], activation:'unverified' } }, {uploadApproved:true});
+    assert.deepEqual(result.reviewerAuthorization, { uploadConsent:'approved', policy, activation:'unverified' });
+    assert.equal(result.reviewConfigured, state === 'configured');
+    assert.equal(result.issues[0]?.code, issue);
+  }
+});
+
+
+test('mixed policy states preserve declines and offer repair for missing scopes',()=>{
+ const result=installationGuidance({...installed(),codexReviewPolicy:{policies:[{state:'declined'},{state:'missing'}]}},{uploadApproved:true})
+ assert.ok(result.issues.some(i=>i.code==='reviewer_policy_declined'&&!i.command))
+ assert.ok(result.issues.some(i=>i.code==='reviewer_policy_missing'&&i.command.includes('onboard')))
+ assert.equal(result.reviewerAuthorization.policy, 'missing_or_outdated')
+ assert.match(result.issues.find(i=>i.code==='reviewer_policy_missing').instruction, /View exact changes.*--json/)
+ assert.doesNotMatch(formatSetup({...installed(),...result}),/finding decisions and explanations approved/)
+})
+
+test('policy inspection errors do not infer missing scopes',()=>{
+ const result=installationGuidance({...installed(),codexReviewPolicy:{error:'inspection failed',policies:[{state:'missing'}]}},{uploadApproved:true})
+ assert.equal(result.reviewerAuthorization.policy, 'unverified')
+ assert.deepEqual(result.issues.map(i=>i.code), ['reviewer_policy_unavailable'])
+})
+
+
+test('invalid profile diagnostics name every affected file', () => {
+  const result=installationGuidance({...installed(),hooks:[{agent:'codex',file:'/default/hooks.json',error:'invalid',profiles:[{file:'/one/hooks.json',error:'one invalid'},{file:'/two/hooks.json',error:'two invalid'}]}]},{uploadApproved:true});
+  const errors=result.issues.filter(i=>i.code==='hook_config_invalid');
+  assert.equal(errors.length,2);
+  assert.match(errors[0].instruction,/\/one\/hooks.json/);
+  assert.match(errors[1].instruction,/\/two\/hooks.json/);
+});
+
+
+test('aggregate errors retain a diagnostic if no profile supplied an error', () => {
+  const result=installationGuidance({...installed(),hooks:[{agent:'codex',file:'/default/hooks.json',error:'unreadable',profiles:[{file:'/one/hooks.json',configured:false}]}]},{uploadApproved:true});
+  assert.equal(result.issues.filter(i=>i.code==='hook_config_invalid').length,1);
+  assert.match(result.issues[0].message,/unreadable/);
+});
+
+
+test('failed policy inspection requests a diagnostic retry rather than reinstallation', () => {
+  const result=installationGuidance({...installed(),codexReviewPolicy:{error:'network blocked',policies:[]}},{uploadApproved:true});
+  const issue=result.issues.find(i=>i.code==='reviewer_policy_unavailable');
+  assert.match(issue.command,/ doctor /);
+  assert.match(issue.instruction,/unknown, not missing/);
+  assert.doesNotMatch(issue.command,/onboard/);
 });
