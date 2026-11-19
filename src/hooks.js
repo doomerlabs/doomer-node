@@ -4,9 +4,10 @@ import { readFile, readdir, lstat } from 'node:fs/promises';
 import { atomicWrite, quote, readJSON, locked, paths, nativePath, changeState, developmentInstall } from './system.js';
 
 export const agents = ['claude', 'codex'];
-export const events = ['UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd'];
-export const eventsFor = agent => ['UserPromptSubmit', 'Stop', agent === 'codex' ? 'Interrupt' : 'SessionEnd'];
+export const events = ['UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd', 'PermissionDenied'];
+export const eventsFor = agent => ['UserPromptSubmit', 'Stop', ...(agent === 'codex' ? ['Interrupt'] : ['SessionEnd', 'PermissionDenied'])];
 const retiredEvents = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure'];
+const timeouts = { UserPromptSubmit: 45, Stop: 60, Interrupt: 15, SessionEnd: 15, PermissionDenied: 5 };
 const marker = () => developmentInstall() ? '--owner=doomer-node-dev' : '--owner=doomer-node';
 export function hookFile(agent) {
   if (agent === 'claude') return join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'settings.json');
@@ -105,14 +106,15 @@ export function mergeHooks(config, agent, executable = nativePath()) {
       else delete next.hooks[event];
       continue;
     }
-    const handler = { type: 'command', command: hookCommand(agent, executable), timeout: event === 'Stop' ? 60 : event === 'UserPromptSubmit' ? 45 : 15 };
+    const handler = { type: 'command', command: hookCommand(agent, executable), timeout: timeouts[event] };
     if (agent === 'codex') handler.statusMessage = `${developmentInstall() ? 'Doomer development' : 'Doomer'}: ${event === 'UserPromptSubmit' ? 'start watch' : 'stop watch'}`;
     // Keep production before development so reinstalling either profile does
     // not change the other's positional trust key in Codex.
     const other = developmentInstall() ? '--owner=doomer-node' : '--owner=doomer-node-dev';
     const otherIndex = kept.findIndex(group => group.hooks.some(h => typeof h.command === 'string' && h.command.split(/\s+/).includes(other)));
     const index = otherIndex < 0 ? kept.length : otherIndex + (developmentInstall() ? 1 : 0);
-    kept.splice(index, 0, { hooks: [handler] });
+    const group = event === 'PermissionDenied' ? { matcher: 'Bash', hooks: [handler] } : { hooks: [handler] };
+    kept.splice(index, 0, group);
     next.hooks[event] = kept;
   }
   return next;
@@ -135,7 +137,10 @@ async function checkHookFile(agent, executable, file) {
     const config = await readJSON(file, {});
     validate(config);
     const command = hookCommand(agent, executable);
-    const configured = eventsFor(agent).every(event => (config.hooks?.[event] || []).some(group => (!group.matcher || group.matcher === '.*') && group.hooks.some(h => h.type === 'command' && h.command === command && h.async !== true)));
+    const configured = eventsFor(agent).every(event => (config.hooks?.[event] || []).some(group => {
+      const matches = event === 'PermissionDenied' ? group.matcher === 'Bash' : !group.matcher || group.matcher === '.*';
+      return matches && group.hooks.some(h => h.type === 'command' && h.command === command && h.async !== true);
+    }));
     return { agent, file, configured, enabled: config.disableAllHooks !== true, activation: 'unverified' };
   } catch (error) { return { agent, file, configured: false, error: error.message }; }
 }

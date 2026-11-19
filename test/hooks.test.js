@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mergeHooks, hookCommand, installHooks } from '../src/hooks.js';
+import { mergeHooks, hookCommand, installHooks, withoutOwnedHooks } from '../src/hooks.js';
 
 test('hook repair is idempotent and preserves old Doomer, unrelated hooks, permissions and trust', () => {
   const original = { permissions: { deny: ['Bash(curl *)'] }, disableAllHooks: true, hooks: {
     Stop: [{ hooks: [{ type: 'command', command: '/old/doomer agent-hook' }, { type: 'command', command: 'echo unrelated' }] }],
     PreToolUse: [{matcher:'.*',hooks:[{command:'node old hook --owner=doomer-node'},{command:'echo keep tool hook'}]}],
     PostToolUse: [{hooks:[{command:'node old hook --owner=doomer-node'}]}],
+    PermissionDenied: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'echo unrelated denial' }] }],
   } };
   const next = mergeHooks(original, 'claude', '/private/with space/bin/doomer.js');
   assert.deepEqual(mergeHooks(next, 'claude', '/private/with space/bin/doomer.js'), next);
@@ -27,9 +28,14 @@ test('hook repair is idempotent and preserves old Doomer, unrelated hooks, permi
   assert.deepEqual(next.hooks.PreToolUse,[{matcher:'.*',hooks:[{command:'echo keep tool hook'}]}]);
   assert.equal(next.hooks.PostToolUse,undefined);
   assert.ok(next.hooks.SessionEnd, 'Claude cleanup hook installed');
+  assert.deepEqual(next.hooks.PermissionDenied, [...original.hooks.PermissionDenied, {
+    matcher: 'Bash', hooks: [{ type: 'command', command, timeout: 5 }],
+  }]);
+  assert.deepEqual(withoutOwnedHooks(next).hooks.PermissionDenied, original.hooks.PermissionDenied);
   const codex = mergeHooks({}, 'codex', '/go/doomer');
   assert.ok(codex.hooks.Interrupt, 'Codex interrupted-turn cleanup installed');
   assert.equal(codex.hooks.SessionEnd, undefined);
+  assert.equal(codex.hooks.PermissionDenied, undefined);
 });
 
 test('rejects malformed settings before changing them', () => {
