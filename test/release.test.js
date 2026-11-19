@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { validateMetadata, completedEvidence, checkPublished, pack, verifyInitialRelease, packageFiles, releaseChannel } from '../scripts/release.mjs';
+import { validateMetadata, completedEvidence, checkPublished, pack, verifyInitialRelease, verifyPublishedAttempt, packageFiles, releaseChannel } from '../scripts/release.mjs';
 
 const sha = 'a'.repeat(40);
 const evidence = { schema: 1, commit: sha, name: '@doomerlabs/doomer', version: '0.0.2', integrity: 'sha512-' + 'A'.repeat(86) + '==' };
@@ -53,6 +53,20 @@ test('registry retries verify existing bytes without republishing or rolling lat
   assert.equal(checkPublished(evidence, { dist: { integrity: evidence.integrity } }, { version: '0.0.3' }), false);
   assert.throws(() => checkPublished(evidence, { dist: { integrity: 'different' } }), /different bytes/);
   assert.throws(() => checkPublished(evidence, null, { version: '0.0.3' }), /latest backwards/);
+});
+
+test('published-byte verification waits for the tarball after registry metadata appears', async t => {
+  const tarball = Buffer.from('tested npm package bytes');
+  const expected = { ...evidence, integrity: `sha512-${createHash('sha512').update(tarball).digest('base64')}` };
+  const tarballURL = 'https://registry.npmjs.org/@doomerlabs/doomer/-/doomer-0.0.2.tgz';
+  const downloads = [new Response(null, { status: 404 }), new Response(tarball), new Response('different bytes')];
+  t.mock.method(globalThis, 'fetch', async url => String(url) === tarballURL
+    ? downloads.shift()
+    : Response.json({ dist: { integrity: expected.integrity, tarball: tarballURL } }));
+
+  assert.equal(await verifyPublishedAttempt(expected), false);
+  assert.equal(await verifyPublishedAttempt(expected), true);
+  await assert.rejects(verifyPublishedAttempt(expected), /tarball bytes do not match/);
 });
 
 test('npm tarball can be reproduced exactly and a different expected digest is rejected', async t => {
