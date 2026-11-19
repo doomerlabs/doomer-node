@@ -3,7 +3,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { homedir, tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { agents, hookFile, globalSkillPaths, removeHooks } from './hooks.js';
-import { paths, nativePath, developmentInstall, packageRoot, readState, otherState, readJSON, writeJSON, changeState, exists, locked, run, hash } from './system.js';
+import { paths, nativePath, developmentInstall, packageRoot, readState, otherState, readJSON, writeJSON, changeState, exists, locked, run, hash, hasInstaller } from './system.js';
 import { endpoint } from './api.js';
 import { removeClaudeReviewPermission } from './claude-policy.js';
 import { reloadCodexHooks } from './codex.js';
@@ -19,7 +19,10 @@ async function canRemoveHome(home, state) {
   if ([resolve('/'), resolve(homedir()), resolve(tmpdir()), resolve(packageRoot), resolve(process.cwd())].includes(home)) return false;
   if (await exists(join(home,'.git')) || await exists(join(home,'package.json'))) return false;
   if ((await lstat(home)).isSymbolicLink()) return false;
-  return state.version === 1 && [state.runtime, state.native?.path, state.hookLauncher].some(path => inside(home,path));
+  const goReceipt = state.installer === 'go' && state.executable === nativePath() &&
+    state.native?.sha256 && state.binaries?.[state.native?.path] === state.native.sha256 &&
+    inside(dirname(state.executable), state.native.path);
+  return state.version === 1 && (goReceipt || [state.runtime, state.native?.path, state.hookLauncher].some(path => inside(home,path)));
 }
 
 async function stopWatchers(home, state) {
@@ -104,7 +107,7 @@ export async function uninstall() {
   const sorted=await Promise.all(skills.map(async path=>({path,link:await exists(path)&&(await lstat(path)).isSymbolicLink()})));
   sorted.sort((a,b)=>Number(b.link)-Number(a.link));
   const other = await otherState();
-  const otherSkills = other.runtime && await exists(other.runtime)
+  const otherSkills = await hasInstaller(other)
     ? (other.skillPaths ?? globalSkillPaths()) : [];
   const identity = async path => { try { return await realpath(path); } catch (error) { if (error.code === 'ENOENT') return resolve(path); throw error; } };
   const sharedTargets = new Set(await Promise.all(otherSkills.map(identity)));

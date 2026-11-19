@@ -59,6 +59,11 @@ export async function exists(file) {
   try { await lstat(file); return true; } catch (e) { if (e.code === 'ENOENT') return false; throw e; }
 }
 
+export async function hasInstaller(state) {
+  const runtime = state.installer === 'go' ? state.native?.path : state.runtime;
+  return Boolean(runtime && await exists(runtime));
+}
+
 export function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: options.inherit ? 'inherit' : ['pipe', 'pipe', 'pipe'], ...options });

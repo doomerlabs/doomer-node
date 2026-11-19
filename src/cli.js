@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
 import { readState, changeState, metadata, developmentInstall } from './system.js';
-import { setup, doctor, update, selectAgents } from './setup.js';
+import { setup, doctor, selectAgents } from './setup.js';
 import { installHooks } from './hooks.js';
 import { installNative, upgradeNative } from './native.js';
 import { doctorService } from './doctor-service.js';
@@ -30,7 +30,6 @@ Setup options:
   --reviewer-policy allow|decline  Decide the separately disclosed Codex policy
   --reviewer-policy-proposal HASH  Digest from that exact proposal
   --skill-source PATH         Install the doomer skill from a local source checkout
-  --from PATH.tgz              Install a local npm tarball before publication
   --json                       Machine-readable result
   --api-url URL                Service (or DOOMER_API_URL; default: https://doomer.ai/api)
 
@@ -43,7 +42,7 @@ export async function main(args) {
     agent: { type: 'string' },
     'claude-review-permission': { type: 'string' }, 'reviewer-policy': { type: 'string' }, 'reviewer-policy-proposal': { type: 'string' },
     'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
-    'skill-source': { type: 'string' }, json: { type: 'boolean' }, from: { type: 'string' }, 'cli-version': { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
+    'skill-source': { type: 'string' }, json: { type: 'boolean' }, 'cli-version': { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
   } });
   if (options.home) process.env[developmentInstall() ? 'DOOMER_DEV_HOME' : 'DOOMER_HOME'] = options.home;
   if (options.version) { console.log(metadata.version); return 0; }
@@ -59,8 +58,9 @@ export async function main(args) {
   if (extra.length) throw new Error('Unexpected command arguments. Run npx @doomerlabs/doomer --help.');
   switch (command) {
     case 'install':
-    case 'onboard': {
-      const result = await setup(options, { forceSkill: command === 'install' });
+    case 'onboard':
+    case 'update': {
+      const result = await setup(options, command);
       if (result === null) {
         if (options.json) console.log(JSON.stringify({ status: 'canceled', ready: false }));
         return 0;
@@ -108,11 +108,6 @@ export async function main(args) {
       const result = await upgradeNative({ check: options.check });
       console.log(options.json ? JSON.stringify(result, null, 2) : `Doomer ${result.state}: ${result.currentVersion} → ${result.latestVersion}`);
       return 0;
-    }
-    case 'update': {
-      const result = await update(options);
-      console.log(options.json ? JSON.stringify(result, null, 2) : `Doomer manager updated to ${result.version}.\n${formatSetup(result)}`);
-      return result.ready ? 0 : 1;
     }
     case 'uninstall': {
       const result=await uninstall();

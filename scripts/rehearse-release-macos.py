@@ -88,9 +88,10 @@ def main():
             result = subprocess.run(['node', str(entry), *arguments, '--json'], cwd=root, env=env,
                                     check=True, stdout=subprocess.PIPE, text=True)
             return json.loads(result.stdout)
-        standalone = manager('install', '--from', str(archive), '--no-hooks')
+        standalone = manager('install', '--no-hooks')
         assert standalone['ready'] and standalone['agents'] == [] and not standalone['uploadApproved']
-        hooked = manager('onboard', '--agent', 'codex,claude')
+        manager('install-hooks', '--agent', 'codex,claude')
+        hooked = manager('doctor')
         assert hooked['ready'] and not hooked['uploadApproved']
         assert {h['agent'] for h in hooked['hooks'] if h['configured']} == {'codex', 'claude'}
         assert sha256(Path(hooked['executable'])) == sha256(native)

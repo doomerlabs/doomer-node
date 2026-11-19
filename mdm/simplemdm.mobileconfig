@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadType</key><string>Configuration</string>
+  <key>PayloadIdentifier</key><string>com.doomerlabs.doomer.mdm.profile</string>
+  <key>PayloadUUID</key><string>4E080BEA-8AE2-4F64-8381-E30757FC9A9B</string>
+  <key>PayloadVersion</key><integer>1</integer>
+  <key>PayloadScope</key><string>System</string>
+  <key>PayloadDisplayName</key><string>Doomer managed deployment</string>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadType</key><string>com.apple.ManagedClient.preferences</string>
+      <key>PayloadIdentifier</key><string>com.doomerlabs.doomer.mdm.preferences</string>
+      <key>PayloadUUID</key><string>60E9D36C-0369-49D8-B346-FB57B37888A4</string>
+      <key>PayloadVersion</key><integer>1</integer>
+      <key>PayloadDisplayName</key><string>Doomer enrollment</string>
+      <key>PayloadContent</key>
+      <dict>
+        <key>com.doomerlabs.doomer.mdm</key>
+        <dict>
+          <key>Forced</key>
+          <array>
+            <dict>
+              <key>mcx_preference_settings</key>
+              <dict>
+                <key>ApiURL</key><string>https://doomer.example/api</string>
+                <key>EnrollmentKey</key><string>{{doomer_enrollment_key}}</string>
+                <key>WorkEmail</key><string>{{doomer_work_email}}</string>
+                <key>Agents</key><array><string>codex</string><string>claude</string></array>
+                <key>AuthorizeReviewUploads</key><true/>
+                <key>AuthorizeReviewerCommands</key><true/>
+              </dict>
+            </dict>
+          </array>
+        </dict>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>
