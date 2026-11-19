@@ -99,10 +99,11 @@ export function verifyInitialRelease(current, published, receipt) {
   }
 }
 
-async function downloadPublished(published) {
+async function downloadPublished(published, { allowPending = false } = {}) {
   const url = new URL(published.dist.tarball);
   if (url.origin !== 'https://registry.npmjs.org') throw new Error('Unexpected npm tarball host.');
   const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(30000) });
+  if (allowPending && response.status === 404) return null;
   if (!response.ok) throw new Error(`npm tarball returned HTTP ${response.status}.`);
   return Buffer.from(await response.arrayBuffer());
 }
@@ -132,6 +133,23 @@ async function registry(version) {
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`npm registry returned HTTP ${response.status}.`);
   return response.json();
+}
+
+export async function verifyPublished(expected, delay = sleep) {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const published = await registry(expected.version);
+    if (published) {
+      if (published.dist?.integrity !== expected.integrity) throw new Error('Published integrity differs from the tested tarball.');
+      // Registry metadata can become visible before the tarball is downloadable.
+      const tarball = await downloadPublished(published, { allowPending: true });
+      if (tarball !== null) {
+        if (integrity(tarball) !== expected.integrity) throw new Error('Published npm tarball bytes do not match.');
+        return;
+      }
+    }
+    await delay(15000);
+  }
+  throw new Error('npm has not made the version downloadable; rerun this workflow to verify without overwriting it.');
 }
 
 async function gate(directory) {
@@ -193,16 +211,8 @@ async function main() {
   }
   if (command === 'verify') {
     const expected = JSON.parse(await readFile(join(directory, 'publication.json')));
-    for (let attempt = 0; attempt < 40; attempt++) {
-      const published = await registry(expected.version);
-      if (published) {
-        if (published.dist?.integrity !== expected.integrity) throw new Error('Published integrity differs from the tested tarball.');
-        if (integrity(await downloadPublished(published)) !== expected.integrity) throw new Error('Published npm tarball bytes do not match.');
-        console.log(`Verified public npm tarball for ${expected.name}@${expected.version}.`); return;
-      }
-      await sleep(15000);
-    }
-    throw new Error('npm has not made the version downloadable; rerun this workflow to verify without overwriting it.');
+    await verifyPublished(expected);
+    console.log(`Verified public npm tarball for ${expected.name}@${expected.version}.`); return;
   }
   throw new Error('Unknown release command.');
 }
