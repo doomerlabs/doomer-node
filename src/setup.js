@@ -1,21 +1,17 @@
 import { homedir } from 'node:os';
-import { randomBytes } from 'node:crypto';
-import { join, resolve, dirname, delimiter, isAbsolute } from 'node:path';
-import { mkdir, mkdtemp, rm, lstat, stat, access, readFile, readdir } from 'node:fs/promises';
+import { join, dirname, delimiter, isAbsolute } from 'node:path';
+import { stat, access, readFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { isCancel, select } from '@clack/prompts';
 import { pickAgents } from './agent-picker.js';
-import { agents, hookFile, installHooks, checkHooks, globalSkillPaths } from './hooks.js';
-import { paths, developmentInstall, metadata, packageRoot, hash, npm, run, readState, changeState, exists, atomicWrite, locked, interactiveTerminal } from './system.js';
+import { agents, hookFile, installHooks, checkHooks } from './hooks.js';
+import { paths, metadata, nativePath, run, readState, exists, hasInstaller, interactiveTerminal } from './system.js';
 import { doctorService } from './doctor-service.js';
-import { uploadDisclosure } from './permissions.js';
-import { installNative, validateCLIVersion } from './native.js';
-import { configureReviewerPolicy, inspectReviewerPolicies } from './reviewer-policy.js';
-import { configureClaudeReviewPermission } from './claude-policy.js';
+import { withNativeSetup, validateCLIVersion } from './native.js';
+import { inspectReviewerPolicies } from './reviewer-policy.js';
+import { SKILL_SOURCE } from './skill-source.js';
 import { reloadCodexHooks } from './codex.js';
 import { inspectNativeInstallation } from './doctor.js';
-import { withSkillSource } from './skill-source.js';
-import { installationGuidance, managerCommand, setupStep, shellQuote } from './recovery.js';
+import { installationGuidance, managerCommand, setupStep } from './recovery.js';
 
 // Look for runnable agent commands, without launching them or treating leftover
 // configuration directories as proof that an agent is installed.
@@ -66,69 +62,6 @@ export async function selectAgents(options) {
   return pickAgents(agents.toReversed().map(agent => ({ agent, label: label(agent) })), defaults);
 }
 
-async function packageDigest(root) {
-  const files = ['package.json', 'README.md', 'LICENSE'];
-  for (const directory of ['bin', 'src']) {
-    for (const name of await readdir(join(root, directory), { recursive: true })) {
-      const relative = `${directory}/${name}`;
-      if ((await lstat(join(root, relative))).isFile()) files.push(relative);
-    }
-  }
-  const content = await Promise.all(files.sort().map(async name => [name, hash(await readFile(join(root, name)))]));
-  return hash(JSON.stringify(content));
-}
-
-export async function installCLI({ from, version } = {}) {
-  const p = paths();
-  return locked(join(p.home, 'install'), async () => {
-    const state = await readState();
-    const desiredVersion = version || metadata.version;
-    const sourceDigest = version || from ? undefined : await packageDigest(packageRoot);
-    let installed = state.runtime;
-    if (from || !installed || state.cliVersion !== desiredVersion || !(await exists(installed)) || (sourceDigest && state.sourceDigest !== sourceDigest)) {
-      await mkdir(p.runtime, { recursive: true, mode: 0o700 });
-      const temp = await mkdtemp(join(p.runtime, '.install-'));
-      let retained = false;
-      try {
-        let spec = from ? resolve(from) : `${metadata.name}@${desiredVersion}`;
-        if (!from && !version) {
-          // Persist the exact package that is running, whether invoked from a
-          // checkout, npx cache, or an installed copy. No public npm release needed.
-          const packed = JSON.parse((await npm(['pack', packageRoot, '--ignore-scripts', '--json', '--pack-destination', temp])).toString());
-          const filename = packed[0]?.filename;
-          if (typeof filename !== 'string' || !/^[\w.-]+\.tgz$/.test(filename)) throw new Error('Invalid npm pack result.');
-          spec = join(temp, filename);
-        }
-        await npm(['install', '--prefix', temp, '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', '--', spec]);
-        const root = join(temp, 'node_modules', '@doomerlabs', 'doomer');
-        const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
-        if (pkg.name !== metadata.name || (!from && pkg.version !== desiredVersion)) throw new Error('Installed package identity does not match.');
-        installed = join(root, 'bin', 'doomer.js');
-        await run(process.execPath, [installed, '--version']);
-        retained = true;
-        const installedDigest = await packageDigest(root);
-        await changeState(s => { s.runtime = installed; s.cliVersion = pkg.version; s.sourceDigest = installedDigest; });
-      } finally { if (!retained) await rm(temp, { recursive: true, force: true }); }
-    }
-    const hookLauncher = join(p.bin, 'hook.cjs');
-    await atomicWrite(hookLauncher, `// Stable Doomer hook entry point. Runtime selection lives in private state.\nconst fs = require('node:fs');\nconst path = require('node:path');\nconst { pathToFileURL } = require('node:url');\nconst state = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'state.json'), 'utf8'));\nimport(pathToFileURL(state.runtime).href).catch(error => { console.error(error.message); process.exitCode = 1; });\n`);
-    await changeState(s => { s.hookLauncher = hookLauncher; });
-    return { runtime: installed, hookLauncher };
-  });
-}
-
-export async function installSkill(selected, source) {
-  // npm exec launches the same official skills CLI as npx skills add; its own
-  // telemetry supplies skills.sh counts. Respect the user's telemetry settings.
-  await withSkillSource(async source => {
-    const args = ['exec', '--yes', '--package=skills', '--', 'skills', 'add', source, '--skill', 'doomer', '--global', '--yes'];
-    if (selected.length) args.push('--agent', ...selected.map(a => a === 'claude' ? 'claude-code' : a));
-    else args.push('--agent', 'codex'); // Store the global skill without installing any hooks.
-    await npm(args);
-  }, source);
-  await changeState(s => { s.skillInstalledAt = new Date().toISOString(); s.skillPaths=[...new Set([...(s.skillPaths||[]),...globalSkillPaths()])]; });
-}
-
 export async function skillPresent(selected = []) {
   const canonical = join(homedir(), '.agents', 'skills', 'doomer', 'SKILL.md');
   const groups = selected.length ? selected.map(agent => agent === 'codex'
@@ -145,140 +78,38 @@ export async function skillPresent(selected = []) {
   return true;
 }
 
-export async function configure(selected, runtime, options) {
-  const service = await doctorService({ explicit: options['api-url'], saved: (await readState()).api });
-  const installed = [];
-  for (const agent of selected) installed.push(await installHooks(agent, runtime));
-  await changeState(s => { s.agents = [...new Set([...s.agents, ...selected])]; s.api = service.api; });
-  await changeState(s => {
-    const api = service.api;
-    if (s.grants.some(g => g.api === api)) {
-      s.identities ??= {};
-      s.identities[api] ||= `doomer_anon_${randomBytes(32).toString('base64url')}`;
-      if (service.credentialDirectory) {
-        s.credentialDirs ??= {};
-        s.credentialDirs[api] ||= resolve(service.credentialDirectory);
-      }
-    }
-  });
-  return installed;
-}
-
-export async function grant(explicit, credentialDirectory) {
-  await changeState(async s => {
-    const service = await doctorService({ explicit, saved: s.api });
-    const api = service.api;
-    credentialDirectory ??= service.credentialDirectory;
-    s.grants = s.grants.filter(g => g.api !== api);
-    s.grants.push({ scope: 'global', api, approvedAt: new Date().toISOString() });
-    s.identities ??= {};
-    s.identities[api] ||= `doomer_anon_${randomBytes(32).toString('base64url')}`;
-    if (credentialDirectory) {
-      s.credentialDirs ??= {};
-      s.credentialDirs[api] = resolve(credentialDirectory);
-    }
-  });
-}
-
-export async function selectUploadApproval(options, selected, state, api, {
-  interactive = interactiveTerminal(), input = process.stdin, output = process.stderr,
-} = {}) {
-  if (options['approve-uploads']) return 'explicit';
-  if (!selected.length) return 'existing';
-  if (state.grants.some(grant => grant.scope === 'global' && grant.api === api)) {
-    if (!options.json) output.write(`Uploads already approved for ${api}; reusing saved permission and skipping browser login.\n`);
-    return 'existing';
-  }
-  if (!interactive) {
-    throw new Error('Upload approval is required to set up automatic reviews. Run setup in a terminal, or pass --approve-uploads if you approve the uploads. Use --no-hooks for CLI-only setup.');
-  }
-
-  output.write([
-    uploadDisclosure(api),
-    'Sign in and approve uploads in your browser to link reviews to your Doomer account.',
-    "If you're using SSH, open the printed link on another device.",
-    '',
-  ].join('\n'));
-  const decision = await select({
-    message: 'Connect your Doomer account',
-    options: [
-      { value: 'browser', label: 'Open browser' },
-      { value: 'exit', label: 'No, exit setup' },
-    ],
-    input,
-    output,
-  });
-  return isCancel(decision) ? 'exit' : decision;
-}
-
-export async function setup(options, { forceSkill = true } = {}) {
+export async function setup(options, mode) {
   validateCLIVersion(options['cli-version']);
-  if (options['skill-source']) {
-    if (!isAbsolute(options['skill-source']) || !await exists(join(options['skill-source'], 'skills', 'doomer', 'SKILL.md'))) {
-      throw new Error('--skill-source must be an absolute local checkout containing skills/doomer/SKILL.md.');
+  if (options['skill-source'] && (!isAbsolute(options['skill-source']) || !await exists(join(options['skill-source'], 'skills', 'doomer', 'SKILL.md')))) {
+    throw new Error('--skill-source must be an absolute local checkout containing skills/doomer/SKILL.md.');
+  }
+  if (['claude-review-permission', 'reviewer-policy'].some(key => options[key])) {
+    const selected = mode === 'update' ? (await readState()).agents
+      : options['no-hooks'] ? [] : options.agent?.split(',').map(agent => agent.trim());
+    if (selected && options['claude-review-permission'] && !selected.includes('claude')) throw new Error('--claude-review-permission requires selecting claude.');
+    if (selected && options['reviewer-policy'] && !selected.includes('codex')) throw new Error('--reviewer-policy requires selecting codex.');
+  }
+  const retry = managerCommand(mode, { api: options['api-url'], cliVersion: options['cli-version'] });
+  const outcome = await setupStep('Running the Go installer', retry, () => withNativeSetup({ version: options['cli-version'] }, async native => {
+    const args = [
+      'npm-setup', '--mode', mode, '--manager-home', paths().home, '--executable', nativePath(),
+      '--release-version', native.version, '--release-source', native.source, '--release-sha256', native.sha256,
+      '--package-version', metadata.version, '--node', process.execPath,
+      '--default-skill-source', SKILL_SOURCE, '--skills-npm-option', '--package=skills',
+    ];
+    if (process.env.npm_execpath) args.push('--npm', process.env.npm_execpath);
+    for (const key of ['agent', 'api-url', 'skill-source', 'claude-review-permission', 'reviewer-policy', 'reviewer-policy-proposal']) {
+      if (options[key] !== undefined) args.push(`--${key}=${options[key]}`);
     }
-  }
-  const state = await readState();
-  const { api } = await doctorService({ explicit: options['api-url'], saved: state.api });
-  const selected = await selectAgents(options);
-  if (selected === null) return null;
-  if (options['claude-review-permission'] && !selected.includes('claude')) throw new Error('--claude-review-permission requires selecting claude.');
-  if (options['reviewer-policy'] && !selected.includes('codex')) throw new Error('--reviewer-policy requires selecting codex.');
-  if (developmentInstall() && !process.env.DOOMER_NATIVE_BINARY) throw new Error('Development installation requires DOOMER_NATIVE_BINARY.');
-  if (!interactiveTerminal() && !selected.length && !options['no-hooks']) {
-    throw new Error('No supported agents detected. Choose --agent claude,codex or use --no-hooks for CLI-only setup.');
-  }
-  const approval = await selectUploadApproval(options, selected, state, api);
-  if (approval === 'exit') {
-    if (!options.json) console.error('Setup canceled.');
-    return null;
-  }
-  if (approval === 'browser' && process.env.DOOMER_TOKEN?.trim()) {
-    throw new Error('Unset DOOMER_TOKEN before browser approval so reviews use the account you approve.');
-  }
-  await rm(join(paths().home,'uninstalling.json'),{force:true});
-  const devLauncher = process.env.DOOMER_DEV_SETUP_LAUNCHER;
-  const retry = developmentInstall() && devLauncher && isAbsolute(devLauncher)
-    ? shellQuote(devLauncher)
-    : managerCommand('onboard', { agents: selected, api: options['api-url'], cliVersion: options['cli-version'] });
-  const installed = await setupStep('Installing the manager', retry, () => installCLI({ from: options.from }));
-  const native = await setupStep('Installing the Go CLI', retry, () => installNative({ version: options['cli-version'] }));
-  if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
-  let reviewCredentialDirectory;
-  if (approval === 'browser') {
-    reviewCredentialDirectory = await setupStep('Authorizing reviews in the browser', retry, async () => {
-      const diagnose = async (flags = []) => JSON.parse((await run(native.executable,
-        [...flags, 'watch', 'diagnose', '--manager-home', paths().home, '--agent', selected[0]])).toString());
-      let routing = await diagnose();
-      if (routing.service !== api) {
-        if (!['default', 'manager state'].includes(routing.service_source)) {
-          throw new Error('This directory routes Doomer reviews to a different service. Check .doomer.env and rerun setup with the matching --api-url.');
-        }
-        routing = await diagnose(['--api-url', api]);
-      }
-      if (routing.token_override_present) throw new Error('Clear the DOOMER_TOKEN override before connecting your browser account.');
-      await run(native.executable, ['--api-url', api, '--profile', routing.profile, 'login', '--device', '--review-uploads'], {
-        stdio: ['inherit', 2, 2],
-        env: { ...process.env, DOOMER_CONFIG_DIR: routing.credential_directory },
-      });
-      return routing.credential_directory;
-    });
-  }
-  if (forceSkill || options['skill-source'] || !await skillPresent(selected)) {
-    if (!options.json) console.error('Installing the Doomer skill…');
-    await setupStep('Installing the skill', retry, () => installSkill(selected, options['skill-source']));
-  }
-  if (approval === 'explicit' || approval === 'browser') await grant(api, reviewCredentialDirectory);
-  await setupStep('Configuring agent hooks', retry, () => configure(selected, native.executable, options));
-  if (selected.includes('claude')) await configureClaudeReviewPermission(native.executable, options['claude-review-permission'], options);
-  const codexReviewPolicy = selected.includes('codex')
-    ? await setupStep('Configuring Codex reviewer policy', retry, () => configureReviewerPolicy(native.executable, options)) : undefined;
-  const result = { ...installed, ...native, agents: selected, ...(await doctor({ policy: codexReviewPolicy, apiURL: options['api-url'] })) };
-  if(selected.includes('codex')) {
-    result.codexReload=await reloadCodexHooks();
-
-  }
-  return result;
+    for (const key of ['no-hooks', 'approve-uploads']) if (options[key]) args.push(`--${key}`);
+    if (interactiveTerminal()) args.push('--interactive');
+    return JSON.parse((await run(native.path, args, { stdio: ['inherit', 'pipe', 'inherit'], maxBytes: 1024 * 1024 })).toString());
+  }));
+  if (outcome.status === 'canceled') return null;
+  if (outcome.status !== 'configured') throw new Error('Go installer did not report completion.');
+  const result = await doctor({ apiURL: options['api-url'] });
+  if (outcome.agents.includes('codex')) result.codexReload = await reloadCodexHooks();
+  return { ...result, agents: outcome.agents, version: metadata.version };
 }
 
 export async function doctor({ policy, fix = false, apiURL } = {}) {
@@ -292,8 +123,7 @@ export async function doctor({ policy, fix = false, apiURL } = {}) {
     }
   }
   const state = await readState();
-  const runtime = state.runtime;
-  const cli = !!runtime && await exists(runtime);
+  const cli = await hasInstaller(state);
   const inspection = await inspectNativeInstallation(state);
   const automaticReviews = inspection.capabilities.watchAgentHook;
   const hooks = await Promise.all(state.agents.map(agent => checkHooks(agent, state.executable)));
@@ -319,29 +149,4 @@ export async function doctor({ policy, fix = false, apiURL } = {}) {
     result.codexReviewPolicy = await inspectReviewerPolicies(state.executable, { 'api-url': api });
   }
   return { ...result, api, ...routing, ...installationGuidance(result, { api, localNative: state.native?.source === 'local', uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === api) }) };
-}
-
-export async function update(options) {
-  const selected = (await readState()).agents;
-  if (options['claude-review-permission'] && !selected.includes('claude')) throw new Error('--claude-review-permission requires selecting claude.');
-  if (options['reviewer-policy'] && !selected.includes('codex')) throw new Error('--reviewer-policy requires configured Codex hooks.');
-  const channel = metadata.version.includes('-beta.') ? 'beta' : 'latest';
-  const raw = await npm(['view', `${metadata.name}@${channel}`, 'version', '--json']);
-  const version = JSON.parse(raw.toString());
-  if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) throw new Error('Invalid published version.');
-  const result = await installCLI({ version });
-  const packageMetadata = JSON.parse(await readFile(join(dirname(result.runtime), '..', 'package.json'), 'utf8'));
-  const native = await installNative({ update:true, packageMetadata });
-  await installSkill(selected);
-  if (selected.length && !native.watch) throw new Error('The Go CLI needs the current watch command.');
-  for (const agent of selected) await installHooks(agent, native.executable);
-  if (selected.includes('claude')) await configureClaudeReviewPermission(native.executable, options['claude-review-permission'], options);
-  const codexReviewPolicy = selected.includes('codex')
-    ? await configureReviewerPolicy(native.executable, options) : undefined;
-  const updated = { ...result, ...native, version, agents: selected, ...(await doctor({ policy: codexReviewPolicy, apiURL: options['api-url'] })) };
-  if(selected.includes('codex')) {
-    updated.codexReload=await reloadCodexHooks();
-
-  }
-  return updated;
 }

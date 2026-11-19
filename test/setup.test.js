@@ -1,261 +1,264 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, readFile, mkdir, rm, lstat, cp, symlink, access } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdtemp, writeFile, readFile, mkdir, rm, lstat, access, copyFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { PassThrough } from 'node:stream';
+import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
+import { createServer } from 'node:http';
 import { exec } from './helpers.js';
-import { selectUploadApproval } from '../src/setup.js';
-import { entry, packageRoot, metadata } from '../src/system.js';
-import { SKILL_SOURCE } from '../src/skill-source.js';
+import { packageRoot, metadata } from '../src/system.js';
 
-const reviewAPI = 'https://doomer.ai/api';
+const candidate = process.env.DOOMER_TEST_NATIVE;
+const legacyPackage = process.env.DOOMER_TEST_LEGACY_PACKAGE;
+const legacyBinary = process.env.DOOMER_TEST_LEGACY_BINARY;
+const skills = process.env.DOOMER_TEST_SKILLS;
+const service = 'http://127.0.0.1:48125/api';
+const skip = !candidate || !skills ? 'set DOOMER_TEST_NATIVE and DOOMER_TEST_SKILLS to exercise the packed installer' : false;
 
-test('interactive upload approval offers browser linking or exit and explains SSH handoff', { timeout: 1000 }, async t => {
-  const choose = keys => {
-    const input = new PassThrough();
-    const output = new PassThrough();
-    let transcript = '';
-    output.on('data', chunk => { transcript += chunk.toString(); });
-    t.after(() => { input.destroy(); output.destroy(); });
-    const decision = selectUploadApproval({}, ['codex'], { grants: [] }, reviewAPI, { interactive: true, input, output });
-    assert.match(transcript, /Connect your Doomer account/);
-    assert.match(transcript, /Open browser/);
-    assert.match(transcript, /No, exit setup/);
-    assert.match(transcript, /using SSH, open the printed link on another device/);
-    assert.doesNotMatch(transcript, /enable reviews here/i);
-    input.write(keys);
-    return decision;
+async function installerFixture(t) {
+  const root = await mkdtemp(join(tmpdir(), 'doomer-cutover-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const env = {
+    PATH: process.env.PATH, HOME: root, USERPROFILE: root, TMPDIR: root,
+    DOOMER_NATIVE_BINARY: resolve(candidate),
+    npm_config_cache: process.env.npm_config_cache || join(root, 'npm-cache'),
+    npm_config_userconfig: '/dev/null',
+    npm_config_ignore_scripts: 'true',
+    npm_config_offline: process.env.npm_config_offline || 'false',
+    DISABLE_TELEMETRY: '1', CI: '1', GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: join(root, 'gitconfig'),
   };
+  await exec('git', ['config', '--file', env.GIT_CONFIG_GLOBAL, `url.file://${resolve(skills)}.insteadOf`, 'https://github.com/doomerlabs/skills.git'], { env, cwd: root });
+  const packed = JSON.parse((await exec('npm', ['pack', packageRoot, '--ignore-scripts', '--json', '--pack-destination', root], { cwd: root, env })).stdout);
+  const archive = join(root, packed[0].filename);
+  const doomer = (args, { pkg = archive, binary = candidate } = {}) => exec('npx', [
+    '--yes', `--package=${pkg}`, '--', 'doomer', ...args, '--json',
+  ], { cwd: root, env: { ...env, DOOMER_NATIVE_BINARY: resolve(binary) }, timeout: 120000 });
+  const state = join(root, '.local', 'share', 'doomer-node', 'state.json');
+  return { root, archive, doomer, state, env };
+}
 
-  assert.equal(await choose('\r'), 'browser');
-  assert.equal(await choose('\x1b[B\r'), 'exit');
-  assert.equal(await choose('\x03'), 'exit');
-});
-
-test('headless upload approval requires an explicit flag or an existing grant for the service', async () => {
-  const headless = { interactive: false };
-  const state = { grants: [{ scope: 'global', api: reviewAPI }] };
-  await assert.rejects(selectUploadApproval({}, ['codex'], state, 'https://example.test/api', headless), /Upload approval is required/);
-  assert.equal(await selectUploadApproval({ 'approve-uploads': true }, ['codex'], { grants: [] }, reviewAPI, headless), 'explicit');
-  assert.equal(await selectUploadApproval({}, ['codex'], state, reviewAPI, headless), 'existing');
-  assert.equal(await selectUploadApproval({}, [], { grants: [] }, reviewAPI, headless), 'existing');
-});
-
-test('saved upload approval explains the skipped login only for human output with selected agents', async () => {
-  let transcript = '';
-  const io = { interactive: false, output: { write: text => { transcript += text; } } };
-  const state = { grants: [{ scope: 'global', api: reviewAPI }] };
-  assert.equal(await selectUploadApproval({}, ['claude'], state, reviewAPI, io), 'existing');
-  assert.match(transcript, /Uploads already approved for https:\/\/doomer.ai\/api; reusing saved permission and skipping browser login/);
-  transcript = '';
-  await selectUploadApproval({ json: true }, ['claude'], state, reviewAPI, io);
-  await selectUploadApproval({}, [], state, reviewAPI, io);
-  await selectUploadApproval({ 'approve-uploads': true }, ['claude'], state, reviewAPI, io);
-  assert.equal(transcript, '');
-  await assert.rejects(selectUploadApproval({}, ['claude'], state, 'https://other.example/api', io), /Upload approval is required/);
-  assert.equal(transcript, '');
-});
-
-test('global install replaces the old CLI, installs skills via official CLI, repairs hooks and supports skill-first onboarding', async t => {
-  const home = await mkdtemp(join(tmpdir(), 'doomer-install-'));
-  t.after(() => rm(home, { recursive: true, force: true }));
-  const repository = join(home, 'skill-repository');
-  await mkdir(repository);
-  const git = (...args) => exec('git', ['-C', repository, ...args]);
-  await git('init', '-q');
-  await git('config', 'user.name', 'Test');
-  await git('config', 'user.email', 'test@example.invalid');
-  await writeFile(join(repository, 'SKILL.md'), '---\nname: doomer\n---\n');
-  await git('add', '.'); await git('commit', '-qm', 'reviewed skill');
-  const skillRevision = (await git('rev-parse', 'HEAD')).stdout.trim();
-  await writeFile(join(repository, 'SKILL.md'), 'newer unreviewed skill');
-  await git('commit', '-qam', 'newer skill');
-  const gitConfig = join(home, 'gitconfig');
-  await exec('git', ['config', '--file', gitConfig, `url.${repository}.insteadOf`, 'https://github.com/doomerlabs/skills.git']);
-  const source = join(home, 'source');
-  await mkdir(source);
-  for (const name of ['src', 'bin', 'package.json', 'package-lock.json', 'README.md', 'LICENSE']) {
-    await cp(join(packageRoot, name), join(source, name), { recursive: true });
+async function setup(t, legacy) {
+  const f = await installerFixture(t);
+  const { root, doomer, state } = f;
+  const codex = join(root, '.codex', 'hooks.json');
+  const claude = join(root, '.claude', 'settings.json');
+  const credentials = join(root, 'fixture-credentials');
+  await mkdir(join(root, '.codex'));
+  await mkdir(join(root, '.claude'));
+  await mkdir(credentials);
+  await writeFile(join(root, '.doomer.env'), `DOOMER_API_URL=${service}\nDOOMER_CONFIG_DIR=${credentials}\n`);
+  await writeFile(codex, '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo keep"}]}]},"unrelated":true}\n');
+  await writeFile(claude, '{"permissions":{"allow":["Read"],"deny":["Bash(rm *)"]}}\n');
+  if (!legacy) {
+    if (legacyBinary) {
+      await assert.rejects(doomer(['install', '--no-hooks'], { binary: legacyBinary }), /requires a Go CLI with installer support/);
+      await assert.rejects(access(state), { code: 'ENOENT' });
+    }
+    await assert.rejects(doomer(['install', '--agent', 'codex,claude']), error => /upload approval is required/i.test(error.stderr));
+    await assert.rejects(access(state), { code: 'ENOENT' });
   }
-  await symlink(join(packageRoot, 'node_modules'), join(source, 'node_modules'), 'dir');
-  const sourcePin = join(source, 'src', 'skill-source.js');
-  await writeFile(sourcePin, (await readFile(sourcePin, 'utf8')).replace(SKILL_SOURCE.split('#')[1], skillRevision));
-  const localEntry = join(source, 'bin', 'doomer.js');
-  const npm = join(home, 'fake-npm.mjs');
-  const native = join(home, 'fake-go');
-  await writeFile(native, `#!/usr/bin/env node
-import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-const args = process.argv.slice(2);
-if (args.includes('codex-policy')) {
-  const installed = join(process.env.HOME, 'policy-installed');
-  appendFileSync(join(process.env.HOME, 'policy-calls'), JSON.stringify(args)+'\\n');
-  if (args.includes('--decision')) {
-    if (args[args.indexOf('--proposal')+1] !== 'fixture-scope-digest') process.exit(2);
-    writeFileSync(installed, 'configured');
-  }
-  console.log(JSON.stringify({policies:[{state:existsSync(installed)?'configured':'missing',extra_policy:'fixture scoped authorization',changes:['preserve unrelated settings'],activation:'unverified',install_command:[process.argv[1],'watch','codex-policy','--proposal','fixture-scope-digest','--decision','allow']}],activation:'unverified'}));
-} else console.log(args.includes('--help') ? 'Watch recursively and review settled changes until stopped --manager-home --agent' : 'doomer 2026.11.10.3');
-`, {mode:0o755});
-  await writeFile(npm, `
-import { cp, mkdir, writeFile, appendFile, stat } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
-const args = process.argv.slice(2);
-await appendFile(join(process.env.HOME, 'calls'), JSON.stringify(args)+'\\n');
-if (args[0] === 'pack') {
-  const name = 'doomerlabs-doomer-${metadata.version}.tgz';
-  await writeFile(join(args[args.indexOf('--pack-destination')+1], name), 'fixture');
-  console.log(JSON.stringify([{filename:name}]));
-} else if (args[0] === 'install') {
-  console.log('npm install progress');
-  const root = join(args[args.indexOf('--prefix')+1], 'node_modules', '@doomerlabs', 'doomer');
-  await cp(process.env.SOURCE, root, { recursive: true });
-} else if (args[0] === 'exec') {
-  const checkout = args[args.indexOf('add') + 1];
-  if (!(await stat(checkout)).isDirectory()) throw new Error('missing checkout');
-  const local = checkout === process.env.LOCAL_SKILL_SOURCE;
-  if (!local && execFileSync('git', ['-C', checkout, 'rev-parse', 'HEAD'], {encoding:'utf8'}).trim() !== process.env.EXPECTED_SKILL_REVISION) throw new Error('wrong skill revision');
-  if (process.env.FAIL_SKILL_INSTALL === '1') throw new Error('simulated skills failure');
-  console.log('skills install progress');
-  const root = join(process.env.HOME, '.agents', 'skills', 'doomer');
-  await mkdir(root, { recursive: true });
-  await cp(join(checkout, ...(local ? ['skills', 'doomer'] : []), 'SKILL.md'), join(root, 'SKILL.md'));
-} else if (args[0] === 'view') console.log('${JSON.stringify(metadata.version)}');
-else process.exit(1);
-`);
-  const bin = join(home, '.local', 'bin'); await mkdir(bin, { recursive: true });
-  await writeFile(join(bin, 'doomer'), 'old doomer');
-  const codex = join(home, '.codex'); await mkdir(codex);
-  await writeFile(join(codex, 'hooks.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo keep' }] }] }, trust: 'keep' }));
-  const env = { ...process.env, DOOMER_API_URL:'https://doomer.ai/api', GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: '1', EXPECTED_SKILL_REVISION: skillRevision, HOME: home, DOOMER_HOME: join(home, 'state'), DOOMER_BIN_DIR: bin, CODEX_HOME: codex, CLAUDE_CONFIG_DIR: join(home, '.claude'), npm_execpath: npm, SOURCE: source, DOOMER_NATIVE_BINARY:native };
-  const cli = args => exec(process.execPath, [localEntry, ...args], { env, cwd: home });
-  assert.deepEqual(JSON.parse((await cli(['install-hooks', '--no-hooks', '--json'])).stdout), {
-    status: 'skipped', agents: [], installed: false,
+  const before = legacy ? { pkg: resolve(legacyPackage), binary: legacyBinary } : undefined;
+  const install = JSON.parse((await doomer(['install', '--agent', 'codex,claude', '--approve-uploads', '--claude-review-permission', 'allow', '--skill-source', resolve(skills)], before)).stdout);
+  assert.equal(install.ready, true);
+  const raw = await readFile(state, 'utf8');
+  const saved = JSON.parse(raw);
+  assert.equal(saved.installer, legacy ? undefined : 'go');
+  assert.equal(typeof saved.runtime, legacy ? 'string' : 'undefined');
+  assert.deepEqual(saved.agents, ['codex', 'claude']);
+  assert.equal(saved.credentialDirs[service], credentials);
+  assert.match(saved.identities[service], /^doomer_anon_/);
+  assert.equal(saved.grants.length, 1);
+  assert.ok(await lstat(saved.executable));
+  const codexBefore = await readFile(codex, 'utf8');
+  const claudeBefore = await readFile(claude, 'utf8');
+  const claudeSettings = JSON.parse(claudeBefore);
+  assert.ok(claudeSettings.permissions.allow.includes('Read'));
+  assert.ok(claudeSettings.permissions.deny.includes('Bash(rm *)'));
+  assert.ok(claudeSettings.permissions.allow.includes(`Bash(${saved.executable} watch results --control *)`));
+  assert.ok(JSON.parse(codexBefore).unrelated);
+
+  const update = JSON.parse((await doomer(['update'])).stdout);
+  assert.equal(update.ready, true);
+  const rawUpdated = await readFile(state, 'utf8');
+  const updated = JSON.parse(rawUpdated);
+  assert.equal(updated.installer, 'go');
+  assert.equal(updated.executable, saved.executable);
+  assert.equal(updated.credentialDirs[service], credentials);
+  assert.deepEqual(updated.identities, saved.identities);
+  assert.deepEqual(updated.grants, saved.grants);
+  const grantBytes = raw => raw.match(/"grants":\s*(\[[\s\S]*?\])/)[1];
+  assert.equal(grantBytes(rawUpdated), grantBytes(raw));
+  assert.equal(await readFile(codex, 'utf8'), codexBefore);
+  assert.equal(await readFile(claude, 'utf8'), claudeBefore);
+  if (legacy) assert.notEqual(updated.native.sha256, saved.native.sha256);
+  const diagnosis = JSON.parse((await exec(updated.executable, ['watch', 'diagnose', '--manager-home', resolve(state, '..'), '--agent', 'codex'], { cwd: root, env: { PATH: process.env.PATH, HOME: root } })).stdout);
+  assert.equal(diagnosis.upload_approved, true);
+  assert.equal(diagnosis.credential_directory, credentials);
+
+  const bob = 'https://other.example/api';
+  await writeFile(join(root, '.doomer.env'), `DOOMER_API_URL=${bob}\nDOOMER_CONFIG_DIR=${credentials}\n`);
+  assert.equal(JSON.parse((await doomer(['update'])).stdout).uploadApproved, false);
+  assert.deepEqual(JSON.parse(await readFile(state, 'utf8')).grants, saved.grants);
+  await doomer(['revoke', '--api-url', service]);
+  assert.deepEqual(JSON.parse(await readFile(state, 'utf8')).grants, []);
+  const removed = JSON.parse((await doomer(['uninstall'])).stdout);
+  assert.equal(removed.removedData, true);
+  await assert.rejects(access(state), { code: 'ENOENT' });
+  assert.equal(JSON.parse(await readFile(codex, 'utf8')).unrelated, true);
+  assert.deepEqual(JSON.parse(await readFile(claude, 'utf8')).permissions.allow, ['Read']);
+}
+
+test('packed npx fresh install and update preserve approval, hooks, identity and scoped permissions', { skip, timeout: 300000 }, async t => {
+  await setup(t, false);
+});
+
+test('packed npx update adopts a real legacy install without rewriting its approval or trusted hook entries', {
+  skip: skip || !legacyPackage || !legacyBinary, timeout: 300000,
+}, async t => {
+  await setup(t, true);
+});
+
+test('interactive npx flow respects cancel and confirms service-scoped browser consent before saving it', {
+  skip: skip || process.platform === 'win32', timeout: 120000,
+}, async t => {
+  const { root, archive, state, env, doomer } = await installerFixture(t);
+  const requests = [];
+  let origin;
+  const token = 'adv_cli_' + 'f'.repeat(43);
+  const fixture = createServer(async (req, res) => {
+    let body = '';
+    for await (const part of req) body += part;
+    requests.push({ url: req.url, auth: req.headers.authorization, body: body ? JSON.parse(body) : null });
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/api/v1/auth/device/code') {
+      res.end(JSON.stringify({
+        device_code: 'test-device', user_code: 'TEST-CODE', interval: 1, expires_in: 20,
+        verification_uri_complete: `${origin}/cli/authorize?code=TEST-CODE`,
+      }));
+    } else if (req.url === '/api/v1/auth/device/token') {
+      res.end(JSON.stringify({ token, scope: 'reviews:upload', client_id: 'fixture-cli', expires_at: '2099-01-01T00:00:00Z' }));
+    } else if (req.url === '/api/v1/auth/whoami') {
+      res.end(JSON.stringify({ id: 'fixture-account' }));
+    } else {
+      res.writeHead(404).end('{}');
+    }
   });
-  await assert.rejects(cli(['install', '--agent', 'codex', '--json']), /Upload approval is required/);
-  await assert.rejects(access(join(home, 'state', 'state.json')), { code: 'ENOENT' });
-  await assert.rejects(access(join(home, 'calls')), { code: 'ENOENT' });
-  assert.equal(JSON.parse((await cli(['install', '--agent', 'codex', '--approve-uploads', '--json'])).stdout).ready, true);
-  const state = JSON.parse(await readFile(join(home, 'state', 'state.json')));
-  assert.equal(state.executable, join(bin, 'doomer'));
-  assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).capabilities.watchAgentHook, true);
-  assert.equal((await exec(state.executable, ['--version'], { env })).stdout.trim(), 'doomer 2026.11.10.3');
-  assert.equal((await lstat(state.executable)).isSymbolicLink(), true);
-  assert.equal(state.native.path, join(bin, 'doomer-dev'));
-  assert.equal((await lstat(state.native.path)).isFile(), true);
-  const hooks = JSON.parse(await readFile(join(codex, 'hooks.json')));
-  assert.equal(hooks.trust, 'keep'); assert.equal(hooks.hooks.Stop[0].hooks[0].command, 'echo keep');
-  assert.match(hooks.hooks.Stop[1].hooks[0].command, /--owner=doomer-node/);
-  assert.ok(hooks.hooks.Stop[1].hooks[0].command.includes(state.executable));
-  assert.equal((await exec(process.execPath, [state.hookLauncher, '--version'], { env })).stdout.trim(), metadata.version);
-  assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
-  const calls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.ok(calls.some(args => args.includes('skills') && args.some(arg => arg.includes('doomer-skill-') && arg.endsWith('/checkout')) && args.includes('doomer') && args.includes('--global')));
-  for (const call of calls.filter(args => args[0] === 'exec')) {
-    await assert.rejects(access(call[call.indexOf('add') + 1]), { code: 'ENOENT' });
+  await new Promise((resolve, reject) => fixture.once('error', reject).listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => fixture.close(resolve)));
+  origin = `http://127.0.0.1:${fixture.address().port}`;
+  const credentials = join(root, 'browser-credentials');
+  const mockBin = join(root, 'mock-bin');
+  await mkdir(mockBin);
+  await writeFile(join(mockBin, process.platform === 'darwin' ? 'open' : 'xdg-open'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  await writeFile(join(root, '.doomer.env'), `DOOMER_API_URL=${origin}/api\nDOOMER_CONFIG_DIR=${credentials}\n`);
+  const doomerTTY = (responses, agentArgs = ['--agent', 'codex']) => exec('python3', ['-c', String.raw`
+import collections, errno, json, os, pty, select, subprocess, sys, time
+responses = collections.deque(json.loads(sys.argv[1]))
+master, slave = pty.openpty()
+process = subprocess.Popen(sys.argv[2:], stdin=slave, stdout=slave, stderr=slave)
+os.close(slave)
+transcript = b''
+deadline = time.monotonic() + 55
+try:
+    while time.monotonic() < deadline:
+        if not select.select([master], [], [], 0.1)[0]:
+            continue
+        try:
+            data = os.read(master, 4096)
+        except OSError as exc:
+            if exc.errno != errno.EIO: raise
+            break
+        if not data: break
+        transcript += data
+        while responses and responses[0][0].encode() in transcript:
+            label, reply = responses.popleft()
+            os.write(master, reply.encode())
+    print(transcript.decode(errors='replace'))
+    if responses:
+        raise SystemExit("missing terminal prompt: " + responses[0][0])
+    raise SystemExit(process.wait(timeout=1))
+finally:
+    if process.poll() is None:
+        process.kill()
+        process.wait()
+    os.close(master)
+`, JSON.stringify(responses), 'npx', '--yes', `--package=${archive}`, '--', 'doomer',
+  'install', ...agentArgs, '--skill-source', resolve(skills), '--json'], {
+    env: { ...env, PATH: `${mockBin}:${env.PATH}` }, cwd: root, timeout: 65000,
+  });
+
+  const cancelled = await doomerTTY([['No, exit setup', '\x1b[B\r']]);
+  assert.match(cancelled.stdout, /"status":\s*"canceled"/);
+  assert.deepEqual(requests, []);
+  await assert.rejects(access(state), { code: 'ENOENT' });
+
+  const approved = await doomerTTY([
+    ['No, exit setup', '\r'],
+    ['Allow Codex to handle Doomer reviews?', '\r'],
+  ]);
+  assert.match(approved.stdout, /"ready":\s*true/);
+  assert.equal(requests.filter(req => req.url === '/api/v1/auth/device/code').length, 1);
+  assert.equal(requests.find(req => req.url === '/api/v1/auth/device/code').body.review_uploads, true);
+  assert.ok(requests.some(req => req.url === '/api/v1/auth/whoami' && req.auth === `Bearer ${token}`));
+  const before = await readFile(join(credentials, 'config.json'), 'utf8');
+  const policy = await readFile(join(root, '.codex', 'config.toml'), 'utf8');
+  assert.match(policy, /Doomer repository review authorization/);
+  const updated = JSON.parse((await doomer(['update'])).stdout);
+  assert.equal(updated.uploadApproved, true);
+  assert.equal(updated.reviewerAuthorization.policy, 'installed');
+  assert.equal(await readFile(join(credentials, 'config.json'), 'utf8'), before);
+  assert.equal(await readFile(join(root, '.codex', 'config.toml'), 'utf8'), policy);
+  assert.equal(requests.filter(req => req.url === '/api/v1/auth/device/code').length, 1);
+});
+
+test('packed npx install verifies a release archive and activates its versioned Go binary', {
+  skip: skip || !process.env.DOOMER_TEST_RELEASE_ARCHIVE, timeout: 120000,
+}, async t => {
+  const { root, archive, state, env } = await installerFixture(t);
+  const version = metadata.doomer.cliVersion;
+  const folder = join(root, 'release');
+  await mkdir(folder);
+  await copyFile(candidate, join(folder, 'doomer'));
+  const platform = `${process.platform}_${{ x64: 'amd64', arm64: 'arm64' }[process.arch]}`;
+  const asset = `doomer_${version}_${platform}.tar.gz`;
+  const artifact = join(folder, asset);
+  await exec('tar', ['-czf', artifact, '-C', folder, 'doomer'], { env, cwd: root });
+  const digest = createHash('sha256').update(await readFile(artifact)).digest('hex');
+  const shim = join(root, 'fixture-download.mjs');
+  await writeFile(shim, `
+import { readFile } from 'node:fs/promises';
+const fetch = globalThis.fetch;
+const base = 'https://downloads.doomer.ai/cli/releases/${version}/';
+globalThis.fetch = async (url, options) => {
+  if (String(url) === base + 'release-manifest.json') {
+    return Response.json({ schemaVersion: 1, version: ${JSON.stringify(version)}, artifacts: { ${JSON.stringify(asset)}: 'sha256:${digest}' } });
   }
-  assert.ok(calls.some(args => args[0] === 'pack'), 'install persists the running package without a published npm version');
-  assert.ok(calls.some(args => args[0] === 'install' && args.at(-1).endsWith('.tgz')));
-  env.DOOMER_TOKEN = 'account-token-for-test';
-  env.DOOMER_CONFIG_DIR = join(home, 'production-config');
-  const proposed = JSON.parse((await cli(['onboard', '--agent', 'codex', '--approve-uploads', '--json'])).stdout);
-  assert.equal(proposed.codexReviewPolicy.policies[0].state, 'missing');
-  assert.equal(proposed.codexReviewPolicy.policies[0].extra_policy, 'fixture scoped authorization');
-  await assert.rejects(access(join(home, 'policy-installed')));
-  const accepted = JSON.parse((await cli(['onboard', '--agent', 'codex', '--reviewer-policy', 'allow', '--reviewer-policy-proposal', 'fixture-scope-digest', '--json'])).stdout);
-  assert.equal(accepted.codexReviewPolicy.policies[0].state, 'configured');
-  const policyCalls = (await readFile(join(home, 'policy-calls'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.ok(policyCalls.some(args => args.includes('--decision') && args[args.indexOf('--proposal')+1] === 'fixture-scope-digest'));
-  await mkdir(join(home, '.claude', 'skills', 'doomer'), { recursive: true });
-  await writeFile(join(home, '.claude', 'skills', 'doomer', 'SKILL.md'), '---\nname: doomer\n---\n');
-  const otherAgent = JSON.parse((await cli(['onboard', '--agent', 'claude', '--json'])).stdout);
-  assert.equal(otherAgent.codexReviewPolicy.policies[0].state, 'configured');
-  const checked = JSON.parse((await cli(['doctor', '--json'])).stdout);
-  assert.equal(checked.codexReviewPolicy.policies[0].state, 'configured');
-  assert.equal(checked.issues.some(issue => issue.code === 'reviewer_policy_unavailable'), false);
-  const alternate = JSON.parse((await cli(['doctor', '--api-url', 'https://other.example/api', '--json'])).stdout);
-  assert.equal(alternate.uploadApproved, false);
-  assert.equal(alternate.codexReviewPolicy, undefined, 'does not inspect a saved grant for another endpoint');
-  const brokenHooks = JSON.parse(await readFile(join(codex, 'hooks.json'), 'utf8'));
-  delete brokenHooks.hooks.Stop;
-  await writeFile(join(codex, 'hooks.json'), JSON.stringify(brokenHooks));
-  const broken = JSON.parse((await exec(process.execPath, [localEntry, 'doctor', '--json'], {env, cwd: home}).catch(error => ({stdout:error.stdout}))).stdout);
-  assert.equal(broken.ready, false);
-  const doctorRepaired = JSON.parse((await cli(['doctor', '--fix', '--json'])).stdout);
-  assert.equal(doctorRepaired.ready, true);
-  assert.equal(doctorRepaired.codexReviewPolicy.policies[0].state, 'configured');
-
-
-  assert.equal((await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').length, calls.length, 'skill-first/onboard reuses installed CLI and skill');
-  const approved = JSON.parse(await readFile(join(home, 'state', 'state.json')));
-  assert.equal(approved.grants[0].scope, 'global');
-  assert.match(approved.identities['https://doomer.ai/api'], /^doomer_anon_/);
-  assert.ok(!JSON.stringify(approved).includes('account-token-for-test'), 'environment token is not copied into installer state');
-  assert.equal(approved.credentialDirs['https://doomer.ai/api'], env.DOOMER_CONFIG_DIR);
-  delete env.DOOMER_TOKEN;
-  delete env.DOOMER_CONFIG_DIR;
-  assert.equal(approved.grants[0].repo, undefined);
-  assert.equal(approved.grants[0].agents, undefined);
-  await exec(process.execPath, [entry, 'revoke'], {env, cwd: home});
-  assert.equal(JSON.parse(await readFile(join(home, 'state', 'state.json'))).grants.length, 0);
-  assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).reviewerAuthorization.uploadConsent, 'not_approved');
-  await writeFile(join(codex, 'hooks.json'), JSON.stringify({ hooks: {}, permissions: 'preserve' }));
-  await assert.rejects(cli(['doctor', '--json']));
-  await cli(['install-hooks', '--agent', 'codex']);
-  assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
-  assert.equal(JSON.parse(await readFile(join(codex, 'hooks.json'))).permissions, 'preserve');
-  const callsBeforeUpdate = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').length;
-  // Update repairs policy as well as hooks, without silently accepting it.
-  const before = JSON.parse(await readFile(join(home, 'state', 'state.json')));
-  before.grants = [{scope:'global',api:'https://doomer.ai/api'}];
-  await writeFile(join(home, 'state', 'state.json'), JSON.stringify(before));
-  await rm(join(home, 'policy-installed'));
-  const updated = JSON.parse((await cli(['update', '--json'])).stdout);
-  assert.equal(updated.codexReviewPolicy.policies[0].state, 'missing');
-  assert.equal(updated.reviewerAuthorization.policy, 'missing_or_outdated');
-  assert.equal(updated.reviewerAuthorization.uploadConsent, 'approved');
-  await assert.rejects(access(join(home, 'policy-installed')));
-  const repaired = JSON.parse((await cli(['update', '--reviewer-policy', 'allow', '--reviewer-policy-proposal', 'fixture-scope-digest', '--json'])).stdout);
-  assert.equal(repaired.reviewerAuthorization.policy, 'installed');
-  assert.equal(repaired.reviewerAuthorization.activation, 'unverified');
-  const updateCalls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').slice(callsBeforeUpdate).map(JSON.parse);
-  assert.ok(updateCalls.some(args => args[0] === 'view' && args[1] === '@doomerlabs/doomer@beta'));
-  assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
-  // Legacy environment overrides cannot restore obsolete global scope.
-  env.DOOMER_HOOK_ROOT = join(home, 'ignored-legacy-root');
-  // Reinstall removes obsolete global scope; hooks use each session cwd.
-  const stale = JSON.parse(await readFile(join(home, 'state', 'state.json')));
-  stale.hookRoot = join(home, 'deleted-scope');
-  await writeFile(join(home, 'state', 'state.json'), JSON.stringify(stale));
-  await cli(['install-hooks', '--agent', 'codex']);
-  assert.equal(JSON.parse(await readFile(join(home, 'state', 'state.json'))).hookRoot, undefined);
-  assert.equal(JSON.parse((await cli(['doctor', '--json'])).stdout).ready, true);
-  await writeFile(join(home, 'state', 'state.json'), JSON.stringify(stale));
-  await cli(['onboard', '--agent', 'codex']);
-  assert.equal(JSON.parse(await readFile(join(home, 'state', 'state.json'))).hookRoot, undefined);
-  const updatedHooks = JSON.parse(await readFile(join(codex, 'hooks.json')));
-  assert.equal(updatedHooks.hooks.Stop[0].hooks[0].command, hooks.hooks.Stop[1].hooks[0].command, 'updates retain the stable hook command');
-  assert.ok(!JSON.stringify(updatedHooks).includes(env.DOOMER_HOOK_ROOT));
-  const localSkills = join(home, 'local-skills');
-  await mkdir(join(localSkills, 'skills', 'doomer'), {recursive:true});
-  await writeFile(join(localSkills, 'skills', 'doomer', 'SKILL.md'), '---\nname: doomer\n---\nlocal draft');
-  env.LOCAL_SKILL_SOURCE = localSkills;
-  const refreshed = await cli(['onboard', '--agent', 'codex', '--skill-source', localSkills, '--json']);
-  assert.equal(JSON.parse(refreshed.stdout).ready, true);
-  const installedSkill = join(home, '.agents', 'skills', 'doomer', 'SKILL.md');
-  assert.equal(await readFile(installedSkill, 'utf8'), await readFile(join(localSkills, 'skills', 'doomer', 'SKILL.md'), 'utf8'));
-  const localCalls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.ok(localCalls.some(args => args[0] === 'exec' && args[args.indexOf('add') + 1] === localSkills), 'explicit local skill refreshes an existing installation');
-  await cli(['onboard', '--agent', 'codex', '--json']);
-  const repeatedCalls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.equal(repeatedCalls.filter(args => args[0] === 'exec').length, localCalls.filter(args => args[0] === 'exec').length, 'plain onboarding preserves an installed local skill');
-  assert.match(await readFile(installedSkill, 'utf8'), /local draft/);
-  env.FAIL_SKILL_INSTALL = '1';
-  await assert.rejects(cli(['install', '--agent', 'codex', '--json']));
-  const failedCalls = (await readFile(join(home, 'calls'), 'utf8')).trim().split('\n').map(JSON.parse);
-  const failedSkill = failedCalls.filter(args => args[0] === 'exec').at(-1);
-  await assert.rejects(access(failedSkill[failedSkill.indexOf('add') + 1]), { code: 'ENOENT' });
-
+  if (String(url) === base + ${JSON.stringify(asset)}) {
+    const bytes = await readFile(${JSON.stringify(artifact)});
+    if (process.env.DOOMER_FIXTURE_BAD_ARCHIVE) bytes[0] ^= 1;
+    return new Response(bytes);
+  }
+  return fetch(url, options);
+};
+`);
+  const { DOOMER_NATIVE_BINARY: _local, ...releaseEnv } = env;
+  const install = bad => exec('npx', [
+    '--yes', `--package=${archive}`, '--', 'doomer', 'install', '--no-hooks', '--json',
+  ], {
+    cwd: root,
+    env: { ...releaseEnv, NODE_OPTIONS: `--import=${pathToFileURL(shim).href}`, ...(bad ? { DOOMER_FIXTURE_BAD_ARCHIVE: '1' } : {}) },
+    timeout: 115000,
+  });
+  await assert.rejects(install(true), /checksum mismatch/);
+  await assert.rejects(access(state), { code: 'ENOENT' });
+  const result = JSON.parse((await install(false)).stdout);
+  const receipt = JSON.parse(await readFile(state, 'utf8'));
+  assert.equal(result.ready, true);
+  assert.equal(receipt.native.source, 'package-pinned');
+  assert.equal(receipt.native.version, version);
+  assert.equal(receipt.native.path, join(root, '.local', 'bin', `doomer-${version}`));
+  assert.equal(receipt.executable, result.executable);
+  assert.ok((await lstat(result.executable)).isSymbolicLink());
 });

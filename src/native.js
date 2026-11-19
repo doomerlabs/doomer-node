@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { readFile, lstat, symlink, rename, rm } from 'node:fs/promises';
+import { readFile, lstat, symlink, rename, rm, mkdtemp } from 'node:fs/promises';
 import { join, resolve, dirname, basename } from 'node:path';
+import { tmpdir } from 'node:os';
 import { gunzipSync } from 'node:zlib';
 import { nativePath, metadata, developmentInstall, otherState, hash, run, readState, changeState, atomicWrite, exists } from './system.js';
 
@@ -96,28 +97,62 @@ export function validateCLIVersion(version) {
   if (process.env.DOOMER_NATIVE_BINARY || developmentInstall()) throw new Error('--cli-version cannot be combined with a local development CLI.');
 }
 
-export async function installNative({ update = false, version, packageMetadata = metadata } = {}) {
+async function resolveNative({ update = false, version, packageMetadata = metadata } = {}) {
   validateCLIVersion(version);
   const state = await readState();
   if (developmentInstall() && !process.env.DOOMER_NATIVE_BINARY) throw new Error('Development installation requires DOOMER_NATIVE_BINARY pointing to your locally built Go CLI.');
   if (process.env.DOOMER_NATIVE_BINARY) {
-    const source = resolve(process.env.DOOMER_NATIVE_BINARY);
-    const version = (await run(source, ['--version'])).toString().trim();
-    return installVersion(await readFile(source), version, 'local');
+    const path = resolve(process.env.DOOMER_NATIVE_BINARY);
+    const version = (await run(path, ['--version'])).toString().trim();
+    return { bytes: await readFile(path), version, source: 'local' };
   }
   const installed = state.native;
-  const packagePin = packageMetadata.version.includes('-beta.') ? packageMetadata.doomer?.cliVersion : undefined;
-  if (packageMetadata.version.includes('-beta.') && !packagePin) throw new Error('Beta installer is missing its tested Go CLI version.');
+  const beta = packageMetadata.version.includes('-beta.');
+  const packagePin = beta ? packageMetadata.doomer?.cliVersion : undefined;
+  if (beta && !packagePin) throw new Error('Beta installer is missing its tested Go CLI version.');
   const selectedVersion = version ?? (installed?.source === 'pinned' ? installed.version : undefined) ?? packagePin;
   validateCLIVersion(selectedVersion);
   if (!update && !(installed?.source === 'package-pinned' && !packagePin) && (!selectedVersion || (['pinned', 'package-pinned'].includes(installed?.source) && installed.version === selectedVersion)) && installed?.path && dirname(installed.path) === dirname(nativePath()) && state.binaries?.[installed.path] && await exists(installed.path)) {
-    if (!(await lstat(installed.path)).isFile() || hash(await readFile(installed.path)) !== installed.sha256) throw new Error('Installed native CLI has changed. Reinstall with DOOMER_NATIVE_BINARY or update.');
-    return activateNative({ ...installed, watch: await supportsWatch(installed.path) });
+    if (!(await lstat(installed.path)).isFile()) throw new Error('Installed native CLI has changed. Reinstall with DOOMER_NATIVE_BINARY or update.');
+    const bytes = await readFile(installed.path);
+    if (hash(bytes) !== installed.sha256) throw new Error('Installed native CLI has changed. Reinstall with DOOMER_NATIVE_BINARY or update.');
+    return { ...installed, bytes, cached: true };
   }
   const { manifest, asset } = selectedVersion ? await pinnedRelease(selectedVersion) : await stableRelease();
   const archive = await download(asset.url, 64 * 1024 * 1024);
   if (hash(archive) !== asset.sha256) throw new Error('Native release checksum mismatch.');
-  return installVersion(archiveBinary(archive), manifest.version, selectedVersion ? (version || installed?.source === 'pinned' ? 'pinned' : 'package-pinned') : 'stable');
+  const source = selectedVersion ? (version || installed?.source === 'pinned' ? 'pinned' : 'package-pinned') : 'stable';
+  return { bytes: archiveBinary(archive), version: manifest.version, source };
+}
+
+export async function installNative(options) {
+  const native = await resolveNative(options);
+  if (native.cached) {
+    const { bytes, cached, ...receipt } = native;
+    return activateNative({ ...receipt, watch: await supportsWatch(receipt.path) });
+  }
+  return installVersion(native.bytes, native.version, native.source);
+}
+
+// Stage a verified candidate without changing the current installation. Go
+// commits the binary and settings after it has the required user decisions.
+export async function withNativeSetup(options, setup) {
+  const native = await resolveNative({ ...options, update: true });
+  const temporary = await mkdtemp(join(tmpdir(), 'doomer-native-'));
+  try {
+    const path = join(temporary, process.platform === 'win32' ? 'doomer.exe' : 'doomer');
+    await atomicWrite(path, native.bytes, 0o755);
+    const reported = (await run(path, ['--version'], { timeout: 5000 })).toString().trim();
+    if (native.source !== 'local' && reported.split(/\s+/)[1] !== native.version) throw new Error('Native CLI version does not match the release manifest.');
+    const help = await run(path, ['npm-setup', '--help'], { maxBytes: 16384, timeout: 5000 })
+      .catch(() => Buffer.alloc(0));
+    if (!help.toString().includes('--release-sha256')) {
+      throw new Error('This Doomer npm package requires a Go CLI with installer support.');
+    }
+    return await setup({ path, version: native.version, source: native.source, sha256: hash(native.bytes) });
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
 }
 
 async function pinnedRelease(version) {

@@ -2,10 +2,10 @@
 
 In the Doomer organization, create a **Managed deployment** and select the seat tier and agent hooks. The key can enroll multiple users. An organization can use an existing active seat or an available paid seat for a new member. Organizations with complimentary early access use that existing entitlement.
 
-Build the installer on a Mac using the target architecture's Node 22+ binary and the Go CLI built from the companion managed-enrollment branch.
+Build the installer on a Mac using the Go CLI built for the target Mac architecture from the companion branch.
 
 ```sh
-mdm/build-pkg.sh /absolute/path/to/node /absolute/path/to/doomer codex,claude /tmp/Doomer-MDM.pkg
+mdm/build-pkg.sh /absolute/path/to/doomer codex,claude /tmp/Doomer-MDM.pkg
 ```
 
 Set `DOOMER_PKG_SIGN_IDENTITY` to a Developer ID Installer identity when your deployment requires a signed package.

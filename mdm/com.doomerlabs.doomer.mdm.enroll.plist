@@ -5,9 +5,9 @@
   <key>Label</key><string>com.doomerlabs.doomer.mdm.enroll</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/libexec/doomer-mdm/node</string>
-    <string>/usr/local/libexec/doomer-mdm/manager/bin/doomer.js</string>
-    <string>mdm-enroll</string>
+    <string>/usr/local/libexec/doomer-mdm/doomer</string>
+    <string>mdm</string>
+    <string>enroll</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>StartInterval</key><integer>1800</integer>

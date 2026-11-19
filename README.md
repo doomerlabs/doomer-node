@@ -24,7 +24,7 @@ npx @doomerlabs/doomer install
 
 Setup selects Claude Code, Codex, both, or standalone reviews, then:
 
-1. Installs a persistent private copy of the manager and the native Go CLI.
+1. Downloads and verifies the native Go CLI. Go installs the CLI and configures the selected agents.
 2. Replaces `~/.local/bin/doomer` with a link to the Go CLI, backing up an existing
    command. Add `~/.local/bin` to `PATH` if absent.
 3. Adds the global skill through the official skills CLI, equivalent to
@@ -84,8 +84,8 @@ user managed.
 The installer pins a reviewed skill commit in `src/skill-source.js`; it does not
 follow a moving feature branch. Update that pin only alongside onboarding
 validation. Registry installation requires this package to be published.
-For local testing from this checkout, the installer automatically persists the
-package you are running. No npm publication, manual pack, or `--from` is needed:
+For local testing from this checkout, point `DOOMER_NATIVE_BINARY` at the matching
+Go build and run the installer in a disposable home:
 
 ```sh
 npx . install
@@ -185,8 +185,8 @@ addressed every finding.
 
 `doctor` inspects the actual skill, executable, and hooks. It reports saved
 configuration separately from unverified native activation. `install-hooks`
-repairs this Node CLI's hooks. `update` installs the latest npm package, updates
-the skill through the skills CLI, and updates the native CLI.
+repairs this Node CLI's hooks. `update` uses the Go release selected by the running npm package, then Go refreshes
+the skill through the upstream skills CLI and repairs configured hooks as needed.
 `revoke` removes saved upload permission for the configured service, not hosted
 reviews. Legacy repository-specific approvals retain their original scope;
 onboard again to accept the new global permission.
@@ -287,12 +287,23 @@ required. Production and development profiles remain separately installed, but
 do not use them simultaneously on the same project unless you want both to
 review its changes. New or changed hook definitions require native trust.
 
-`doomer upgrade` delegates a Node-managed CLI to this manager's `upgrade` command.
+`doomer upgrade` delegates a Node-managed CLI to the npm package's `upgrade` command.
 Unlike `update`, `upgrade` changes only the native executable: it does not install
 skills, change agent selection, rewrite hooks, or grant upload permission. Use
 `upgrade --check --json` to inspect the latest release without writing local state.
 Development/local candidate binaries remain user-managed.
 
+
+## Test an unpublished installer
+
+Set `DOOMER_TEST_NATIVE` to a test-only Go build and `DOOMER_TEST_SKILLS` to the
+skills checkout. Run `node --test test/setup.test.js`. The test packs this
+checkout, invokes it through `npx`, and uses a temporary home for each run.
+Set `DOOMER_TEST_LEGACY_PACKAGE` and `DOOMER_TEST_LEGACY_BINARY` to exercise
+the old-to-new update with an actual older npm package and Go binary. The
+browser approval case uses a loopback fixture and a disposable terminal. Set
+`DOOMER_TEST_RELEASE_ARCHIVE=1` with a build stamped with the pinned CLI version
+to verify checksum handling and the versioned install path.
 
 ## npm release channels
 

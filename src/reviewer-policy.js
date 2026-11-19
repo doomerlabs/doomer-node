@@ -1,6 +1,6 @@
 import { isCancel, select } from '@clack/prompts';
 import { realpath, readFile } from 'node:fs/promises';
-import { paths, readState, otherState, changeState, exists, run, interactiveTerminal } from './system.js';
+import { paths, readState, otherState, changeState, exists, run, interactiveTerminal, hasInstaller } from './system.js';
 import { doctorService } from './doctor-service.js';
 import { dirname } from 'node:path';
 import { hookFiles } from './hooks.js';
@@ -122,7 +122,7 @@ export async function removeReviewerPolicies(state, execute = run) {
   const files = [...new Set([...(state.hookFiles || []).filter(file => file.endsWith('hooks.json')), ...(state.codexPolicies || []).map(policy => policy.configPath.replace(/config\.toml$/, 'hooks.json')), ...await hookFiles('codex')])];
   const results = [];
   const other = await otherState();
-  const otherActive = other.runtime && await exists(other.runtime);
+  const otherActive = await hasInstaller(other);
   const shared = Object.keys(state.credentialDirs || {}).filter(service =>
     otherActive && other.credentialDirs?.[service] === state.credentialDirs[service]);
   for (const file of files) {
