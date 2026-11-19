@@ -38,6 +38,6 @@
     "ws": "^8.22.2"
   },
   "doomer": {
-    "cliVersion": "2026.11.18.2-beta.1"
+    "cliVersion": "2026.11.18.3-beta.1"
   }
 }
