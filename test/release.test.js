@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { validateMetadata, completedEvidence, checkPublished, pack, verifyInitialRelease, verifyPublishedAttempt, packageFiles, releaseChannel } from '../scripts/release.mjs';
+import { validateMetadata, completedEvidence, checkPublished, pack, verifyInitialRelease, verifyPublished, packageFiles, releaseChannel } from '../scripts/release.mjs';
 
 const sha = 'a'.repeat(40);
 const evidence = { schema: 1, commit: sha, name: '@doomerlabs/doomer', version: '0.0.2', integrity: 'sha512-' + 'A'.repeat(86) + '==' };
@@ -58,15 +58,36 @@ test('registry retries verify existing bytes without republishing or rolling lat
 test('published-byte verification waits for the tarball after registry metadata appears', async t => {
   const tarball = Buffer.from('tested npm package bytes');
   const expected = { ...evidence, integrity: `sha512-${createHash('sha512').update(tarball).digest('base64')}` };
+  const metadataURL = 'https://registry.npmjs.org/@doomerlabs%2fdoomer/0.0.2';
   const tarballURL = 'https://registry.npmjs.org/@doomerlabs/doomer/-/doomer-0.0.2.tgz';
-  const downloads = [new Response(null, { status: 404 }), new Response(tarball), new Response('different bytes')];
-  t.mock.method(globalThis, 'fetch', async url => String(url) === tarballURL
-    ? downloads.shift()
-    : Response.json({ dist: { integrity: expected.integrity, tarball: tarballURL } }));
+  const requests = [];
+  const delays = [];
+  const downloads = [null, null, tarball];
+  const delay = async ms => { delays.push(ms); };
+  t.mock.method(globalThis, 'fetch', async url => {
+    const target = String(url);
+    requests.push(target);
+    if (target === metadataURL) return Response.json({ dist: { integrity: expected.integrity, tarball: tarballURL } });
+    assert.equal(target, tarballURL, 'unexpected fetch URL');
+    const bytes = downloads.shift();
+    return bytes == null ? new Response(null, { status: 404 }) : new Response(bytes);
+  });
 
-  assert.equal(await verifyPublishedAttempt(expected), false);
-  assert.equal(await verifyPublishedAttempt(expected), true);
-  await assert.rejects(verifyPublishedAttempt(expected), /tarball bytes do not match/);
+  await verifyPublished(expected, delay);
+  assert.deepEqual(requests, Array.from({ length: 3 }, () => [metadataURL, tarballURL]).flat());
+  assert.deepEqual(delays, [15000, 15000]);
+
+  requests.length = 0;
+  delays.length = 0;
+  downloads.push(Buffer.from('different bytes'));
+  await assert.rejects(verifyPublished(expected, delay), /tarball bytes do not match/);
+  assert.deepEqual(requests, [metadataURL, tarballURL]);
+  assert.deepEqual(delays, []);
+
+  requests.length = 0;
+  await assert.rejects(verifyPublished(expected, delay), /has not made the version downloadable/);
+  assert.equal(requests.length, 80);
+  assert.equal(delays.length, 40);
 });
 
 test('npm tarball can be reproduced exactly and a different expected digest is rejected', async t => {
