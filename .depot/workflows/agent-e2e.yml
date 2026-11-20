@@ -45,7 +45,7 @@ jobs:
         with:
           repository: doomerlabs/doomer
           # Source commit of the published CLI pinned by package.json.
-          ref: a84e45f30c8b2abfadff7d715dad2c10320b5a32
+          ref: 1d9a5e9586a5064c56b02ff3878ade472724ad04
           path: candidate-cli
           persist-credentials: false
       - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c
