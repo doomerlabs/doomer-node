@@ -28,6 +28,7 @@
                 <key>ApiURL</key><string>https://doomer.example/api</string>
                 <key>EnrollmentKey</key><string>{{doomer_enrollment_key}}</string>
                 <key>WorkEmail</key><string>{{doomer_work_email}}</string>
+                <key>UpdateChannel</key><string>{{doomer_channel}}</string>
                 <key>Agents</key><array><string>codex</string><string>claude</string></array>
                 <key>AuthorizeReviewUploads</key><true/>
                 <key>AuthorizeReviewerCommands</key><true/>
