@@ -55,11 +55,17 @@ pilot device group. Set the group-level `doomer_enrollment_key` and
 Set `doomer_channel` to `beta`, `stable`, or `manual`. A missing
 `UpdateChannel` preference defaults to `beta`.
 
-If the Mac already has an `email_address` attribute containing the assigned
-engineer's work email, reuse it. In your copy of the profile template, change
-the `WorkEmail` value from `{{doomer_work_email}}` to `{{email_address}}`.
-You can also use `doomer_work_email` with the template as supplied. Confirm
-the chosen attribute is populated on each pilot Mac.
+Use the [SimpleMDM profile template](simplemdm.mobileconfig) and configure
+the assigned engineer's work email on the individual Mac.
+
+- If the Mac already has that address in its per-device `email_address`
+  attribute, reuse it. In your copy of the template, change the `WorkEmail`
+  value from `{{doomer_work_email}}` to `{{email_address}}`.
+- Otherwise, set `doomer_work_email` on the individual Mac and keep
+  `{{doomer_work_email}}` in the profile template.
+
+If you change the attribute used by an enrolled Mac, confirm that both
+attributes resolve to the same work email before applying the change.
 
 Enable attribute support and deploy the profile at device scope. Set `ApiURL`
 to the candidate service's reachable HTTPS API, and keep the profile's agent
@@ -67,7 +73,14 @@ list aligned with the Doomer deployment. The optional email domain
 restrictions live in Doomer. For this pilot, use Macs assigned to a single
 employee.
 
-On the pilot Mac, start a fresh logged-in session and open a disposable repository in the selected coding agent. Confirm an ordinary edit produces a Quick Review link without Doomer setup prompts. Sign into Doomer with the assigned email and verify the link opens the review. A different member of the same organization should be denied. Confirm Deep Review uses the organization's entitlement and confirm the named seat and install in the organization dashboard.
+Once the profile is applied, verify the resolved work email on the pilot Mac.
+It should match the assigned engineer's address.
+
+```sh
+sudo /usr/bin/plutil -extract WorkEmail raw -o - '/Library/Managed Preferences/com.doomerlabs.doomer.mdm.plist'
+```
+
+Start a fresh logged-in session on the pilot Mac and open a disposable repository in the selected coding agent. Confirm an ordinary edit produces a Quick Review link without Doomer setup prompts. Sign into Doomer with the assigned email and verify the link opens the review. A different member of the same organization should be denied. Confirm Deep Review uses the organization's entitlement and confirm the named seat and install in the organization dashboard.
 
 The installer writes a system Codex hook configuration when selected and a Claude Code managed settings drop-in when selected. A higher-precedence Claude policy can require merging the generated hook and permission settings into that policy. Confirm the effective settings in the pilot. Starting a fresh Codex session after the login-time enrollment job ensures it reads the new scoped reviewer policy.
 
