@@ -2,10 +2,20 @@
 
 In the Doomer organization, create a **Managed deployment** and select the seat tier and agent hooks. The key can enroll multiple users. An organization can use an existing active seat or an available paid seat for a new member. Organizations with complimentary early access use that existing entitlement.
 
+Open the [beta CLI feed](https://downloads.doomer.ai/cli/beta.json) and use
+`managed_package.version` as `VERSION`. For a stable deployment, use the
+[stable CLI feed](https://downloads.doomer.ai/cli/stable.json) once it lists a
+`managed_package`. That field appears only after the Doomer CLI release job
+publishes and verifies the signed bootstrap and runtime. Older releases that
+lack the field use the legacy installer.
+
 Download `Doomer-MDM-Bootstrap-VERSION.pkg` from
-`https://downloads.doomer.ai/cli/releases/VERSION/`. Use the same package for
-Apple Silicon and Intel Macs. Doomer CLI releases produce a Developer ID
-Installer–signed bootstrap containing both agent integrations. Upload it once. Each actively MDM-enrolled Mac with the Doomer device profile installs the latest verified managed package for its channel and checks for updates every six hours, with up to one hour of jitter.
+`https://downloads.doomer.ai/cli/releases/VERSION/` and verify
+`bootstrapSHA256` in that release's `mdm-release.json`. Upload this signed
+universal bootstrap once for Apple Silicon and Intel Macs. Each actively
+MDM-enrolled Mac with the Doomer device profile installs the latest verified
+managed package for its channel and checks for updates every six hours, with
+up to one hour of jitter.
 
 For a local build on macOS, use the package builder in the [Doomer CLI
 repository](https://github.com/doomerlabs/doomer/tree/main/mdm) with a matching
@@ -20,8 +30,15 @@ The installer writes a system Codex hook configuration when selected and a Claud
 
 For enrollment errors, check the Mac's logs for `doomer-mdm` and verify profile attributes and available seats in Doomer. Rotating a deployment key affects subsequent enrollments and CLI credential renewal. Revoke an individual CLI credential from **Enrolled installs**. Removing the profile stops managed hooks on that Mac.
 
-For a manual update, set `UpdateChannel` to `manual` and run
-`sudo /Library/DoomerMDM/run-doomer mdm update --channel beta` on the
-Mac. A channel without a managed package leaves the current runtime in place.
-Follow the [two-release pilot guide](https://doomer.ai/docs/installation/managed-deployments#verify-automatic-updates-across-two-releases)
-to verify the same MDM upload on fresh installation and a subsequent update.
+For manual updates in SimpleMDM, set the group-level `doomer_channel`
+attribute to `manual`. Keep `{{doomer_channel}}` in the profile template so
+SimpleMDM populates `UpdateChannel`. Once the profile applies, IT can select
+the package channel for each run on the Mac:
+
+- Beta: `sudo /Library/DoomerMDM/run-doomer mdm update --channel beta`
+- Stable: `sudo /Library/DoomerMDM/run-doomer mdm update --channel stable`
+
+If the selected CLI feed has no managed package, the updater reports that
+and keeps the current runtime. The [two-release pilot guide](https://doomer.ai/docs/installation/managed-deployments#verify-automatic-updates-across-two-releases)
+shows how to verify the same MDM upload during fresh installation and a
+subsequent update.
