@@ -2,24 +2,23 @@
 
 In the Doomer organization, create a **Managed deployment** and select the seat tier and agent hooks. The key can enroll multiple users. An organization can use an existing active seat or an available paid seat for a new member. Organizations with complimentary early access use that existing entitlement.
 
-Open the [beta CLI feed](https://downloads.doomer.ai/cli/beta.json) and use
-`managed_package.version` as `VERSION`. For a stable deployment, use the
-[stable CLI feed](https://downloads.doomer.ai/cli/stable.json) once it lists a
-`managed_package`. That field appears only after the Doomer CLI release job
-publishes and verifies the signed bootstrap and runtime. Older releases that
-lack the field use the legacy installer.
+Download the latest signed `Doomer-MDM-Bootstrap-VERSION.pkg` from the
+[Doomer MDM Bootstrap releases](https://github.com/doomerlabs/doomer/releases)
+and verify it with that release's `checksums.txt`. Choose a release titled
+**Doomer MDM Bootstrap** with a tag that starts with `mdm-bootstrap-`.
+Upload this universal bootstrap once for Apple Silicon and Intel Macs.
 
-Download `Doomer-MDM-Bootstrap-VERSION.pkg` from
-`https://downloads.doomer.ai/cli/releases/VERSION/` and verify
-`bootstrapSHA256` in that release's `mdm-release.json`. Upload this signed
-universal bootstrap once for Apple Silicon and Intel Macs. Each actively
-MDM-enrolled Mac with the Doomer device profile installs the latest verified
-managed package for its channel and checks for updates every six hours, with
-up to one hour of jitter.
+After installation, the downloader waits for active MDM enrollment and the
+device profile, then installs the latest verified managed package from the
+selected channel. The hooks become usable after the first verified install.
+The Mac then checks every six hours with up to one hour of jitter. Find the
+current managed runtime in `managed_package.version` on the
+[beta CLI feed](https://downloads.doomer.ai/cli/beta.json) or the
+[stable CLI feed](https://downloads.doomer.ai/cli/stable.json).
 
 For a local build on macOS, use the package builder in the [Doomer CLI
-repository](https://github.com/doomerlabs/doomer/tree/main/mdm) with a matching
-release binary. The [CLI release documentation](https://github.com/doomerlabs/doomer/blob/main/docs/release.md#managed-macos-installer)
+repository](https://github.com/doomerlabs/doomer/tree/main/mdm) with the
+dedicated bootstrap updater binary. The [CLI release documentation](https://github.com/doomerlabs/doomer/blob/main/docs/release.md#managed-macos-installer)
 describes the signing and publication workflow.
 
 In SimpleMDM, attach the package and the custom configuration profile to the pilot device group. Use [custom attributes](https://simplemdm.com/blog/custom-configuration-profiles-custom-attributes/) for the group-level `doomer_enrollment_key` and `doomer_channel`, and the per-device `doomer_work_email`. Set `doomer_channel` to `beta`, `stable`, or `manual`. A missing `UpdateChannel` preference defaults to `beta`. Enable attribute support and deploy the profile at device scope. Set `ApiURL` to the candidate service's reachable HTTPS API, and keep the profile's agent list aligned with the Doomer deployment. The optional email domain restrictions live in Doomer. For this pilot, use Macs assigned to a single employee.
