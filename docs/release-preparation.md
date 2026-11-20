@@ -40,6 +40,16 @@ held with `/doomer no-approve` until the user explicitly authorizes release work
 5. Recheck PR CI and review conversations after the last code change. Do not use
    a passing run on older source as final-source evidence.
 
+## Managed macOS releases
+
+The Doomer CLI repository owns both managed installers. A dedicated
+`mdm-bootstrap-*` tag runs the Apple signing and native verification matrix
+before publishing the universal bootstrap and its `checksums.txt` as
+assets of that tag's GitHub release. CLI releases publish a separate signed
+managed runtime, then advertise it on the CLI channel only after verifying
+the public package and manifest. Both installers are independent of npm
+publication. See the [CLI release procedure](https://github.com/doomerlabs/doomer/blob/main/docs/release.md#managed-macos-installer).
+
 ## Native Mac handoff
 
 Download the reviewed build-only Go ZIP and npm tarball from the private
