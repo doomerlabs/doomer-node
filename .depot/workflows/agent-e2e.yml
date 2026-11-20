@@ -55,6 +55,8 @@ jobs:
         with:
           node-version: 22.20.0
       - name: Verify published CLI archive against pinned source
+        env:
+          CANDIDATE_ARCHIVE_SHA256: d7567a7503bcc47cbde3badf409830dcb043bdfeeeb4dd5b9ae8ea0cd11aa49f
         run: |
           python3 - <<'PYTHON'
           import hashlib,json,os,pathlib,re,subprocess,urllib.request
@@ -74,6 +76,8 @@ jobs:
           name=f'doomer_{version}_linux_amd64.tar.gz'
           archive=download(name)
           digest=hashlib.sha256(archive).hexdigest()
+          if digest != os.environ['CANDIDATE_ARCHIVE_SHA256']:
+              raise SystemExit('Published CLI archive does not match the pinned SHA-256')
           checksums=[line.split() for line in download('checksums.txt').decode().splitlines()]
           if manifest.get('artifacts',{}).get(name) != 'sha256:'+digest or [digest,name] not in checksums:
               raise SystemExit('Published CLI archive checksum mismatch')
