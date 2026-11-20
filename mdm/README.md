@@ -49,7 +49,23 @@ An unsigned local bootstrap is for package and launcher checks. It does
 not bypass runtime signature verification. Use the signed releases above
 for an end-to-end pilot.
 
-In SimpleMDM, attach the package and the custom configuration profile to the pilot device group. Use [custom attributes](https://simplemdm.com/blog/custom-configuration-profiles-custom-attributes/) for the group-level `doomer_enrollment_key` and `doomer_channel`, and the per-device `doomer_work_email`. Set `doomer_channel` to `beta`, `stable`, or `manual`. A missing `UpdateChannel` preference defaults to `beta`. Enable attribute support and deploy the profile at device scope. Set `ApiURL` to the candidate service's reachable HTTPS API, and keep the profile's agent list aligned with the Doomer deployment. The optional email domain restrictions live in Doomer. For this pilot, use Macs assigned to a single employee.
+In SimpleMDM, attach the package and the custom configuration profile to the
+pilot device group. Set the group-level `doomer_enrollment_key` and
+`doomer_channel` [custom attributes](https://simplemdm.com/blog/custom-configuration-profiles-custom-attributes/).
+Set `doomer_channel` to `beta`, `stable`, or `manual`. A missing
+`UpdateChannel` preference defaults to `beta`.
+
+If the Mac already has an `email_address` attribute containing the assigned
+engineer's work email, reuse it. In your copy of the profile template, change
+the `WorkEmail` value from `{{doomer_work_email}}` to `{{email_address}}`.
+You can also use `doomer_work_email` with the template as supplied. Confirm
+the chosen attribute is populated on each pilot Mac.
+
+Enable attribute support and deploy the profile at device scope. Set `ApiURL`
+to the candidate service's reachable HTTPS API, and keep the profile's agent
+list aligned with the Doomer deployment. The optional email domain
+restrictions live in Doomer. For this pilot, use Macs assigned to a single
+employee.
 
 On the pilot Mac, start a fresh logged-in session and open a disposable repository in the selected coding agent. Confirm an ordinary edit produces a Quick Review link without Doomer setup prompts. Sign into Doomer with the assigned email and verify the link opens the review. A different member of the same organization should be denied. Confirm Deep Review uses the organization's entitlement and confirm the named seat and install in the organization dashboard.
 
