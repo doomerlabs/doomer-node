@@ -3,10 +3,12 @@
 In the Doomer organization, create a **Managed deployment** and select the seat tier and agent hooks. The key can enroll multiple users. An organization can use an existing active seat or an available paid seat for a new member. Organizations with complimentary early access use that existing entitlement.
 
 On the [Doomer releases page](https://github.com/doomerlabs/doomer/releases),
-choose the newest release titled **Doomer MDM Bootstrap**. Use the version
-after `mdm-bootstrap-` in its tag as `VERSION` in the attached
+choose the newest release whose tag starts with `mdm-bootstrap-`. Use the
+version after the prefix as `VERSION` in the attached
 `Doomer-MDM-Bootstrap-VERSION.pkg`. This version is independent of the
-runtime version delivered by the CLI channel.
+runtime version delivered by the CLI channel. If the first dedicated release
+is still pending, existing channel-enabled bootstraps can stay assigned and
+continue receiving verified runtime updates.
 
 Download the package and `checksums.txt` from that same release into an
 empty directory. On a Mac, run the following from that directory and confirm
