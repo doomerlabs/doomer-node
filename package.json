@@ -38,6 +38,7 @@
     "ws": "^8.22.2"
   },
   "doomer": {
-    "cliVersion": "2026.11.19.1-beta.3"
+    "cliVersion": "2026.11.19.1-beta.3",
+    "cliArchiveSha256": "d7567a7503bcc47cbde3badf409830dcb043bdfeeeb4dd5b9ae8ea0cd11aa49f"
   }
 }
