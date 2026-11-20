@@ -64,8 +64,9 @@ the assigned engineer's work email on the individual Mac.
 - Otherwise, set `doomer_work_email` on the individual Mac and keep
   `{{doomer_work_email}}` in the profile template.
 
-If you change the attribute used by an enrolled Mac, confirm that both
-attributes resolve to the same work email before applying the change.
+For a Mac that's already enrolled, compare the new attribute's value in the
+SimpleMDM device record with the Mac's currently deployed `WorkEmail` using
+the command below. Apply the profile change only if the addresses match.
 
 Enable attribute support and deploy the profile at device scope. Set `ApiURL`
 to the candidate service's reachable HTTPS API, and keep the profile's agent
