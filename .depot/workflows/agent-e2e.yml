@@ -45,7 +45,7 @@ jobs:
         with:
           repository: doomerlabs/doomer
           # Source commit of the published CLI pinned by package.json.
-          ref: a84e45f30c8b2abfadff7d715dad2c10320b5a32
+          ref: 1d9a5e9586a5064c56b02ff3878ade472724ad04
           path: candidate-cli
           persist-credentials: false
       - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c
@@ -60,8 +60,11 @@ jobs:
           import hashlib,json,os,pathlib,re,subprocess,urllib.request
           package=json.loads((pathlib.Path(os.environ['COMPONENT_SOURCE'])/'package.json').read_text())
           version=package['doomer']['cliVersion']
+          expected_digest=package['doomer'].get('cliArchiveSha256','')
           if not re.fullmatch(r'20\d{2}\.\d{1,2}\.\d{1,2}\.\d+-beta\.\d+',version):
               raise SystemExit('Expected an exact CLI beta version')
+          if not isinstance(expected_digest,str) or not re.fullmatch(r'[a-f0-9]{64}',expected_digest):
+              raise SystemExit(f'Expected the Linux amd64 archive SHA-256 alongside the CLI pin for {version}')
           base=f'https://downloads.doomer.ai/cli/releases/{version}/'
           def download(name):
               request=urllib.request.Request(base+name,headers={'X-Doomer-Release-Verification':'1'})
@@ -74,6 +77,8 @@ jobs:
           name=f'doomer_{version}_linux_amd64.tar.gz'
           archive=download(name)
           digest=hashlib.sha256(archive).hexdigest()
+          if digest != expected_digest:
+              raise SystemExit(f'Published CLI archive for {version} does not match the pinned SHA-256')
           checksums=[line.split() for line in download('checksums.txt').decode().splitlines()]
           if manifest.get('artifacts',{}).get(name) != 'sha256:'+digest or [digest,name] not in checksums:
               raise SystemExit('Published CLI archive checksum mismatch')
