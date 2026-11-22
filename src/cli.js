@@ -94,7 +94,7 @@ export async function main(args) {
         console.log(formatDoctor(result));
         await sendDoctorBrowserResult(endpoint, options['browser-session'], result);
         console.log('Result sent to Doomer Doctor.');
-        return 0;
+        return result.ready ? 0 : 1;
       }
       if (options.json) console.log(JSON.stringify(result, null, 2));
       else console.log(formatDoctor(result));

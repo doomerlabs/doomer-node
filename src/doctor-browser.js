@@ -1,18 +1,23 @@
-const runtimeCodes = new Set([
+import { DEFAULT_API, resolveAPI } from './api.js';
+
+const diagnosticCodes = new Set([
   'checkout_unavailable', 'codex_session_pending', 'codex_session_ready', 'codex_session_error',
   'hook_evidence_missing', 'hook_activity_recorded', 'review_completed', 'assessment_timed_out',
   'review_failed', 'review_status_recorded', 'review_evidence_missing', 'cli_changed_since_success',
   'installer_state_invalid', 'service_config_invalid', 'native_diagnostics_unavailable', 'collection_failed',
+  'installation_incomplete', 'cli_incompatible', 'hook_config_invalid', 'hooks_missing', 'hooks_disabled',
+  'reviewer_policy_unavailable', 'reviewer_policy_declined', 'reviewer_policy_missing',
+  'uploads_not_approved', 'command_not_on_path',
 ]);
 
 export function doctorBrowserEndpoint(origin, code) {
   let url;
   try { url = new URL(origin); } catch {}
-  const loopback = url && (url.hostname === 'localhost' || url.hostname === '[::1]' || url.hostname.startsWith('127.'));
-  if (!url || origin !== url.origin || !/^[A-Za-z0-9_-]{43}$/.test(code ?? '') ||
-      (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback))) {
+  if (!url || origin !== url.origin || !/^[A-Za-z0-9_-]{43}$/.test(code ?? '')) {
     throw new Error('Copy a fresh Doctor command from the troubleshooting page.');
   }
+  const serviceOrigin = new URL(origin === new URL(DEFAULT_API).origin ? DEFAULT_API : resolveAPI()).origin;
+  if (origin !== serviceOrigin) throw new Error('Use the Doctor page for the Doomer service configured on this machine.');
   return new URL('/api/docs/doctor-session', url);
 }
 
@@ -21,13 +26,13 @@ export async function sendDoctorBrowserResult(endpoint, code, result) {
     ...(result.runtime?.report?.checks ?? []).map(check => check.code),
     ...(result.issues ?? []).map(issue => issue.code),
     result.runtime?.code,
-  ].filter(code => runtimeCodes.has(code));
+  ].filter(code => diagnosticCodes.has(code));
   let response;
   try {
     response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'submit', code, result: { source: 'npm', ready: result.ready === true, checks: [...new Set(checks)].slice(0, 20) } }),
+      body: JSON.stringify({ action: 'submit', code, result: { source: 'npm', ready: result.ready === true, checks: [...new Set(checks)] } }),
       redirect: 'error',
       signal: AbortSignal.timeout(10_000),
     });
