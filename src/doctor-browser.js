@@ -10,15 +10,15 @@ const diagnosticCodes = new Set([
   'uploads_not_approved', 'command_not_on_path',
 ]);
 
-export function doctorBrowserEndpoint(origin, configuredAPI) {
+export function doctorBrowserEndpoint(origin = new URL(DEFAULT_API).origin, configuredAPI, allowUnconfigured = false) {
   let url;
-  try { url = new URL(origin); } catch {}
+  try { url = new URL(resolveAPI(origin)); } catch {}
   if (!url || origin !== url.origin) {
     throw new Error('Copy a fresh Doctor command from the troubleshooting page.');
   }
   const publicOrigin = new URL(DEFAULT_API).origin;
-  if (origin !== publicOrigin && origin !== new URL(resolveAPI(configuredAPI)).origin) {
-    throw new Error('Use the Doctor page for the Doomer service configured on this machine.');
+  if (!allowUnconfigured && origin !== publicOrigin && origin !== new URL(resolveAPI(configuredAPI)).origin) {
+    throw new Error(`Browser origin ${origin} does not match your configured Doomer service. For a dev site you trust, rerun with --allow-unconfigured-browser-origin.`);
   }
   return new URL('/api/docs/doctor-session', url);
 }
