@@ -13,6 +13,7 @@ test('browser Doctor uses Doomer or the exact configured service origin', t => {
   });
   assert.equal(doctorBrowserEndpoint('https://doomer.ai', code).href, 'https://doomer.ai/api/docs/doctor-session');
   assert.equal(doctorBrowserEndpoint('http://[::1]:3040', code).href, 'http://[::1]:3040/api/docs/doctor-session');
+  assert.equal(doctorBrowserEndpoint('https://configured.example', code, 'https://configured.example/api').origin, 'https://configured.example');
   for (const origin of ['https://unconfigured.example', 'https://doomer.ai:8080', 'http://[::1]:3041']) {
     assert.throws(() => doctorBrowserEndpoint(origin, code), /service configured/);
   }

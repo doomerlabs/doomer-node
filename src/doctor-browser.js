@@ -10,14 +10,16 @@ const diagnosticCodes = new Set([
   'uploads_not_approved', 'command_not_on_path',
 ]);
 
-export function doctorBrowserEndpoint(origin, code) {
+export function doctorBrowserEndpoint(origin, code, configuredAPI) {
   let url;
   try { url = new URL(origin); } catch {}
   if (!url || origin !== url.origin || !/^[A-Za-z0-9_-]{43}$/.test(code ?? '')) {
     throw new Error('Copy a fresh Doctor command from the troubleshooting page.');
   }
-  const serviceOrigin = new URL(origin === new URL(DEFAULT_API).origin ? DEFAULT_API : resolveAPI()).origin;
-  if (origin !== serviceOrigin) throw new Error('Use the Doctor page for the Doomer service configured on this machine.');
+  const publicOrigin = new URL(DEFAULT_API).origin;
+  if (origin !== publicOrigin && origin !== new URL(resolveAPI(configuredAPI)).origin) {
+    throw new Error('Use the Doctor page for the Doomer service configured on this machine.');
+  }
   return new URL('/api/docs/doctor-session', url);
 }
 
