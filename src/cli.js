@@ -90,7 +90,7 @@ export async function main(args) {
       }
       const result = await doctor({ fix: options.fix, apiURL: options['api-url'], repo: options.repo, runtime: true, verifyAccount: options['verify-account'] ?? false });
       if (browserCheck) {
-        const endpoint = doctorBrowserEndpoint(options['browser-origin'], options['browser-session'], result.api);
+        const endpoint = doctorBrowserEndpoint(options['browser-origin'], result.api);
         console.log(formatDoctor(result));
         await sendDoctorBrowserResult(endpoint, options['browser-session'], result);
         console.log('Result sent to Doomer Doctor.');
