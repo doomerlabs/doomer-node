@@ -171,3 +171,21 @@ test('Doctor retains the last installer failure when installation state is unrea
   assert.equal(report.issues[0].code, 'installer_state_invalid');
   assert.deepEqual(report.installFailure, failure);
 });
+
+test('canceling the installer preserves the last failure for Doctor', { skip: process.platform === 'win32' }, async t => {
+  const { root, cwd } = await fixture(t);
+  const failure = { stage: 'agent setup', at: '2026-11-22T11:00:00Z' };
+  const native = join(root, 'native-fixture');
+  await writeFile(join(root, 'last-install-failure.json'), JSON.stringify(failure));
+  await writeFile(native, [
+    '#!' + process.execPath,
+    'if (process.argv.includes("--help")) console.log("--release-sha256");',
+    'else if (process.argv.includes("--version")) console.log("doomer dev");',
+    'else console.log(JSON.stringify({status: "canceled"}));',
+  ].join('\n'), { mode: 0o755 });
+  const env = { ...process.env, DOOMER_HOME: root, DOOMER_DEV_INSTALL: '0', DOOMER_BIN_DIR: join(root, 'bin'), DOOMER_NATIVE_BINARY: native };
+  const setup = await exec(process.execPath, [entry, 'install', '--no-hooks', '--json'], { cwd, env }).catch(error => assert.fail(error.stderr || error.message));
+  assert.equal(JSON.parse(setup.stdout).status, 'canceled');
+  const result = await exec(process.execPath, [entry, 'doctor', '--json'], { cwd, env }).catch(error => error);
+  assert.deepEqual(JSON.parse(result.stdout).installFailure, failure);
+});

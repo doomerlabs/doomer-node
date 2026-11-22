@@ -116,9 +116,9 @@ export async function setup(options, mode) {
     await writeJSON(failureFile, { stage, at: new Date().toISOString() }).catch(() => {});
     throw error;
   }
-  if (['configured', 'canceled'].includes(outcome.status)) await rm(failureFile, { force: true }).catch(() => {});
   if (outcome.status === 'canceled') return null;
   if (outcome.status !== 'configured') throw new Error('Go installer did not report completion.');
+  await rm(failureFile, { force: true }).catch(() => {});
   const result = await doctor({ apiURL: options['api-url'] });
   if (outcome.agents.includes('codex')) result.codexReload = await reloadCodexHooks();
   return { ...result, agents: outcome.agents, version: metadata.version };
