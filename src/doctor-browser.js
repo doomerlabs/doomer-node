@@ -10,10 +10,10 @@ const diagnosticCodes = new Set([
   'uploads_not_approved', 'command_not_on_path',
 ]);
 
-export function doctorBrowserEndpoint(origin, code, configuredAPI) {
+export function doctorBrowserEndpoint(origin, configuredAPI) {
   let url;
   try { url = new URL(origin); } catch {}
-  if (!url || origin !== url.origin || !/^[A-Za-z0-9_-]{43}$/.test(code ?? '')) {
+  if (!url || origin !== url.origin) {
     throw new Error('Copy a fresh Doctor command from the troubleshooting page.');
   }
   const publicOrigin = new URL(DEFAULT_API).origin;
