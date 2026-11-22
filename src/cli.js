@@ -6,7 +6,7 @@ import { installNative, upgradeNative } from './native.js';
 import { doctorService } from './doctor-service.js';
 import { uninstall } from './uninstall.js';
 import { reloadCodexHooks, reloadMessage } from './codex.js';
-import { formatDoctor, formatSetup } from './doctor.js';
+import { formatDoctor, formatSetup, sessionTestPrompt } from './doctor.js';
 
 const HELP = `Doomer manager ${metadata.version}
 
@@ -31,6 +31,7 @@ Setup options:
   --reviewer-policy-proposal HASH  Digest from that exact proposal
   --skill-source PATH         Install the doomer skill from a local source checkout
   --repo PATH                  Checkout to diagnose with doctor
+  --test-session               Print a prompt to test the current chat’s hook and watcher
   --verify-account             Opt in to remote account verification with doctor
   --json                       Machine-readable result
   --api-url URL                Service (or DOOMER_API_URL; default: https://doomer.ai/api)
@@ -44,7 +45,7 @@ export async function main(args) {
     agent: { type: 'string' },
     'claude-review-permission': { type: 'string' }, 'reviewer-policy': { type: 'string' }, 'reviewer-policy-proposal': { type: 'string' },
     'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
-    repo: { type: 'string' }, 'verify-account': { type: 'boolean' },
+    repo: { type: 'string' }, 'verify-account': { type: 'boolean' }, 'test-session': { type: 'boolean' },
     'skill-source': { type: 'string' }, json: { type: 'boolean' }, 'cli-version': { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
   } });
   if (options.home) process.env[developmentInstall() ? 'DOOMER_DEV_HOME' : 'DOOMER_HOME'] = options.home;
@@ -55,6 +56,7 @@ export async function main(args) {
   if (Object.hasOwn(options, 'reviewer-policy') && (!['allow', 'decline'].includes(options['reviewer-policy']) || !['install', 'onboard', 'update'].includes(command))) throw new Error('--reviewer-policy allow|decline is supported only by install, onboard, and update, after reviewing the scoped proposal.');
   if (Object.hasOwn(options, 'reviewer-policy-proposal') && (!['install', 'onboard', 'update'].includes(command) || !options['reviewer-policy'])) throw new Error('--reviewer-policy-proposal requires a reviewer-policy decision with install, onboard, or update.');
   if ((Object.hasOwn(options, 'repo') || options['verify-account']) && command !== 'doctor') throw new Error('--repo and --verify-account are supported only by doctor.');
+  if (options['test-session'] && (command !== 'doctor' || Object.keys(options).some(option => option !== 'test-session'))) throw new Error('--test-session is a standalone doctor option.');
   if (Object.hasOwn(options, 'fix') && command !== 'doctor') throw new Error('--fix is supported only by doctor.');
   if (Object.hasOwn(options, 'check') && command !== 'upgrade') throw new Error('--check is supported only by upgrade.');
   if (Object.hasOwn(options, 'cli-version') && !['install', 'onboard'].includes(command)) throw new Error('--cli-version is supported only by install and onboard.');
@@ -74,6 +76,10 @@ export async function main(args) {
       return result.ready ? 0 : 1;
     }
     case 'doctor': {
+      if (options['test-session']) {
+        console.log(sessionTestPrompt);
+        return 0;
+      }
       const result = await doctor({ fix: options.fix, apiURL: options['api-url'], repo: options.repo, runtime: true, verifyAccount: options['verify-account'] ?? false });
       if (options.json) console.log(JSON.stringify(result, null, 2));
       else console.log(formatDoctor(result));

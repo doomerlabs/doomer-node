@@ -152,3 +152,10 @@ export function formatSetup(result) {
   }
   return lines.join('\n');
 }
+
+// Also available before a native binary has been installed.
+export const sessionTestPrompt = `Paste this entire prompt in the affected Codex or Claude Code chat:
+
+Doomer Doctor: Test this session
+
+Please check the Quick review hook and watcher in this chat without editing files or sending source. Report only the live Doctor result from this turn, including the last confirmed step and next action. If no live Doctor result arrived, say “No hook receipt for this session” and ask me to check that the Doomer prompt hook is loaded and trusted in this agent profile, then retry this prompt.`;
