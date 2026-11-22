@@ -148,3 +148,44 @@ test('doctor and revoke agree on directory service and preserve other grants', a
   await assert.rejects(exec(process.execPath, [entry, 'revoke'], { cwd, env }));
   assert.deepEqual(JSON.parse(await readFile(stateFile, 'utf8')).grants.map(g => g.api), [local]);
 });
+
+test('Doctor uses the requested checkout for service routing', async t => {
+  const { root, cwd, file } = await fixture(t);
+  await writeFile(file, 'DOOMER_API_URL=https://target.example/api');
+  const from = join(root, 'invocation');
+  await mkdir(from);
+  await writeFile(join(from, '.doomer.env'), 'DOOMER_API_URL=https://invocation.example/api');
+  const env = { ...process.env, DOOMER_HOME: root, DOOMER_DEV_INSTALL: '0' };
+  const result = await exec(process.execPath, [entry, 'doctor', '--json', '--repo', cwd], { cwd: from, env }).catch(error => error);
+  assert.equal(JSON.parse(result.stdout).api, 'https://target.example/api');
+});
+
+test('Doctor retains the last installer failure when installation state is unreadable', async t => {
+  const { root, cwd } = await fixture(t);
+  const failure = { stage: 'native binary preparation', at: '2026-11-22T11:00:00Z' };
+  await writeFile(join(root, 'last-install-failure.json'), JSON.stringify(failure));
+  await writeFile(join(root, 'state.json'), '[broken json');
+  const env = { ...process.env, DOOMER_HOME: root, DOOMER_DEV_INSTALL: '0' };
+  const result = await exec(process.execPath, [entry, 'doctor', '--json'], { cwd, env }).catch(error => error);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.issues[0].code, 'installer_state_invalid');
+  assert.deepEqual(report.installFailure, failure);
+});
+
+test('canceling the installer preserves the last failure for Doctor', { skip: process.platform === 'win32' }, async t => {
+  const { root, cwd } = await fixture(t);
+  const failure = { stage: 'agent setup', at: '2026-11-22T11:00:00Z' };
+  const native = join(root, 'native-fixture');
+  await writeFile(join(root, 'last-install-failure.json'), JSON.stringify(failure));
+  await writeFile(native, [
+    '#!' + process.execPath,
+    'if (process.argv.includes("--help")) console.log("--release-sha256");',
+    'else if (process.argv.includes("--version")) console.log("doomer dev");',
+    'else console.log(JSON.stringify({status: "canceled"}));',
+  ].join('\n'), { mode: 0o755 });
+  const env = { ...process.env, DOOMER_HOME: root, DOOMER_DEV_INSTALL: '0', DOOMER_BIN_DIR: join(root, 'bin'), DOOMER_NATIVE_BINARY: native };
+  const setup = await exec(process.execPath, [entry, 'install', '--no-hooks', '--json'], { cwd, env }).catch(error => assert.fail(error.stderr || error.message));
+  assert.equal(JSON.parse(setup.stdout).status, 'canceled');
+  const result = await exec(process.execPath, [entry, 'doctor', '--json'], { cwd, env }).catch(error => error);
+  assert.deepEqual(JSON.parse(result.stdout).installFailure, failure);
+});

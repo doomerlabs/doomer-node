@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { inspectNativeInstallation, formatDoctor } from '../src/doctor.js';
+import { inspectNativeInstallation, inspectRuntimeDiagnostics, formatDoctor } from '../src/doctor.js';
 
 async function installation(t) {
   const root = await mkdtemp(join(tmpdir(), 'doomer-doctor-'));
@@ -87,4 +87,17 @@ test('doctor labels disabled profiles before missing hooks', () => {
 test('profile errors remain visible when hooks are disabled', () => {
   const output=formatDoctor({cli:true,ready:false,nativeStatus:'available',nativeVersion:'doomer dev',commandStatus:'available',globalCommand:'/bin/doomer',onPath:true,skill:'installed',automaticReviews:true,hooks:[{agent:'codex',configured:false,enabled:false,profiles:[{file:'/account/hooks.json',configured:false,enabled:false,error:'Invalid JSON'}]}],next:'Review settings.'},{color:false});
   assert.match(output,/\/account\/hooks.json: Invalid JSON/);
+});
+
+test('runtime diagnostics use the installed binary with an explicit no-upload flag', async t => {
+  const { binary, state } = await installation(t);
+  await writeFile(binary, `#!${process.execPath}\n
+    const args = JSON.stringify(process.argv.slice(2));
+    if (args !== JSON.stringify(['doctor', '--no-upload', '--json', '--repo', 'test checkout'])) process.exit(1);
+    console.log(JSON.stringify({ schema: 1, checks: [{ code: 'hook_evidence_missing' }] }));
+  `);
+  const output = await inspectRuntimeDiagnostics(state, { nativeStatus: 'available' }, 'test checkout');
+  assert.equal(output.status, 'available');
+  assert.equal(output.report.checks[0].code, 'hook_evidence_missing');
+  assert.equal((await inspectRuntimeDiagnostics({}, { nativeStatus: 'missing' })).code, 'native_diagnostics_unavailable');
 });

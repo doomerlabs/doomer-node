@@ -7,11 +7,11 @@ import { hookFiles } from './hooks.js';
 
 export async function inspectReviewerPolicy(executable, options = {}, execute = run) {
   const state = await readState();
-  const { api } = await doctorService({ explicit: options['api-url'], saved: state.api });
+  const { api } = await doctorService({ explicit: options['api-url'], saved: state.api, cwd: options.cwd });
   if (!state.grants.some(g => g.api === api)) return { policies: [], activation: 'not_required' };
   const result = JSON.parse((await execute(executable,
     ['--api-url', api, 'watch', 'codex-policy', '--manager-home', paths().home],
-    { timeout: 30000, maxBytes: 1024 * 1024, ...(options.codexHome ? { env: { ...process.env, CODEX_HOME: options.codexHome } } : {}) })).toString());
+    { timeout: 30000, maxBytes: 1024 * 1024, cwd: options.cwd, ...(options.codexHome ? { env: { ...process.env, CODEX_HOME: options.codexHome } } : {}) })).toString());
   if (!Array.isArray(result.policies)) throw new Error('Go CLI does not support Codex reviewer policy setup; upgrade the native CLI.');
   return result;
 }
@@ -69,7 +69,7 @@ async function configureSingleReviewerPolicy(executable, options, pick = select,
     // command revalidates both consent and proposal before applying a decision.
     const command = decision === 'allow' ? policy.install_command : policy.decline_command;
     if (!Array.isArray(command) || await realpath(command[0]) !== await realpath(executable)) throw new Error('Invalid reviewer policy command.');
-    await execute(command[0], command.slice(1), { timeout: 30000, maxBytes: 1024 * 1024, ...(options.codexHome ? { env: { ...process.env, CODEX_HOME: options.codexHome } } : {}) });
+    await execute(command[0], command.slice(1), { timeout: 30000, maxBytes: 1024 * 1024, cwd: options.cwd, ...(options.codexHome ? { env: { ...process.env, CODEX_HOME: options.codexHome } } : {}) });
     if (decision === 'allow') installedPolicy = true;
   }
   result = await inspect();
