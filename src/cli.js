@@ -7,6 +7,7 @@ import { doctorService } from './doctor-service.js';
 import { uninstall } from './uninstall.js';
 import { reloadCodexHooks, reloadMessage } from './codex.js';
 import { formatDoctor, formatSetup, sessionTestPrompt } from './doctor.js';
+import { doctorBrowserEndpoint, sendDoctorBrowserResult } from './doctor-browser.js';
 
 const HELP = `Doomer manager ${metadata.version}
 
@@ -32,6 +33,8 @@ Setup options:
   --skill-source PATH         Install the doomer skill from a local source checkout
   --repo PATH                  Checkout to diagnose with doctor
   --test-session               Print a prompt to test the current chat’s hook and watcher
+  --browser-session CODE       Send status codes to a waiting troubleshooting page
+  --browser-origin URL         Origin from the waiting troubleshooting page
   --verify-account             Opt in to remote account verification with doctor
   --json                       Machine-readable result
   --api-url URL                Service (or DOOMER_API_URL; default: https://doomer.ai/api)
@@ -46,12 +49,17 @@ export async function main(args) {
     'claude-review-permission': { type: 'string' }, 'reviewer-policy': { type: 'string' }, 'reviewer-policy-proposal': { type: 'string' },
     'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
     repo: { type: 'string' }, 'verify-account': { type: 'boolean' }, 'test-session': { type: 'boolean' },
+    'browser-session': { type: 'string' }, 'browser-origin': { type: 'string' },
     'skill-source': { type: 'string' }, json: { type: 'boolean' }, 'cli-version': { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
   } });
   if (options.home) process.env[developmentInstall() ? 'DOOMER_DEV_HOME' : 'DOOMER_HOME'] = options.home;
   if (options.version) { console.log(metadata.version); return 0; }
   if (options.help || !positionals.length) { console.log(HELP); return 0; }
   const [command, ...extra] = positionals;
+  const browserCheck = Object.hasOwn(options, 'browser-session') || Object.hasOwn(options, 'browser-origin');
+  if (browserCheck && (command !== 'doctor' || Object.keys(options).some(option => !['browser-session', 'browser-origin', 'repo'].includes(option)))) {
+    throw new Error('Use --browser-session and --browser-origin with a read-only doctor check.');
+  }
   if (Object.hasOwn(options, 'claude-review-permission') && (!['allow', 'decline'].includes(options['claude-review-permission']) || !['install', 'onboard', 'update'].includes(command))) throw new Error('--claude-review-permission allow|decline requires install, onboard, or update.');
   if (Object.hasOwn(options, 'reviewer-policy') && (!['allow', 'decline'].includes(options['reviewer-policy']) || !['install', 'onboard', 'update'].includes(command))) throw new Error('--reviewer-policy allow|decline is supported only by install, onboard, and update, after reviewing the scoped proposal.');
   if (Object.hasOwn(options, 'reviewer-policy-proposal') && (!['install', 'onboard', 'update'].includes(command) || !options['reviewer-policy'])) throw new Error('--reviewer-policy-proposal requires a reviewer-policy decision with install, onboard, or update.');
@@ -80,7 +88,14 @@ export async function main(args) {
         console.log(sessionTestPrompt);
         return 0;
       }
+      const endpoint = browserCheck ? doctorBrowserEndpoint(options['browser-origin'], options['browser-session']) : null;
       const result = await doctor({ fix: options.fix, apiURL: options['api-url'], repo: options.repo, runtime: true, verifyAccount: options['verify-account'] ?? false });
+      if (endpoint) {
+        console.log(formatDoctor(result));
+        await sendDoctorBrowserResult(endpoint, options['browser-session'], result);
+        console.log('Result sent to Doomer Doctor.');
+        return 0;
+      }
       if (options.json) console.log(JSON.stringify(result, null, 2));
       else console.log(formatDoctor(result));
       return result.ready ? 0 : 1;
