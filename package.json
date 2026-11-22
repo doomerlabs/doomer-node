@@ -1,6 +1,6 @@
 {
   "name": "@doomerlabs/doomer",
-  "version": "0.1.0-beta.19",
+  "version": "0.1.0-beta.20",
   "description": "Doomer Quick reviews and deterministic coding-agent setup",
   "type": "module",
   "bin": {
@@ -38,7 +38,7 @@
     "ws": "^8.22.2"
   },
   "doomer": {
-    "cliVersion": "2026.11.20.1-beta.6",
-    "cliArchiveSha256": "d207abadb8924a47741dd7596cf7fd9404eaed3fe95e6e82379bdc8fe645eb74"
+    "cliVersion": "2026.11.22.1-beta.1",
+    "cliArchiveSha256": "7b909a0555624cd6fa9482f6c9378753537561235bbab46fe139b6d369cfeb77"
   }
 }
