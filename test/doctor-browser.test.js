@@ -10,10 +10,15 @@ test('browser Doctor uses Doomer or the exact configured service origin', t => {
     else process.env.DOOMER_API_URL = previous;
   });
   assert.equal(doctorBrowserEndpoint('https://doomer.ai').href, 'https://doomer.ai/api/docs/doctor-session');
+  assert.equal(doctorBrowserEndpoint().href, 'https://doomer.ai/api/docs/doctor-session');
   assert.equal(doctorBrowserEndpoint('http://[::1]:3040').href, 'http://[::1]:3040/api/docs/doctor-session');
   assert.equal(doctorBrowserEndpoint('https://configured.example', 'https://configured.example/api').origin, 'https://configured.example');
   for (const origin of ['https://unconfigured.example', 'https://doomer.ai:8080', 'http://[::1]:3041']) {
-    assert.throws(() => doctorBrowserEndpoint(origin), /service configured/);
+    assert.throws(() => doctorBrowserEndpoint(origin), /--allow-unconfigured-browser-origin/);
+  }
+  assert.equal(doctorBrowserEndpoint('https://dev.example', undefined, true).href, 'https://dev.example/api/docs/doctor-session');
+  for (const origin of ['http://dev.example', 'https://dev.example/api', 'https://user@dev.example', 'https://dev.example?name=check']) {
+    assert.throws(() => doctorBrowserEndpoint(origin, undefined, true), /Copy a fresh Doctor command/);
   }
 });
 

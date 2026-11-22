@@ -34,7 +34,8 @@ Setup options:
   --repo PATH                  Checkout to diagnose with doctor
   --test-session               Print a prompt to test the current chat’s hook and watcher
   --browser-session CODE       Send status codes to a waiting troubleshooting page
-  --browser-origin URL         Origin from the waiting troubleshooting page
+  --browser-origin URL         Origin from the waiting troubleshooting page (default: https://doomer.ai)
+  --allow-unconfigured-browser-origin  Send browser diagnostic status codes to an explicitly specified dev origin
   --verify-account             Opt in to remote account verification with doctor
   --json                       Machine-readable result
   --api-url URL                Service (or DOOMER_API_URL; default: https://doomer.ai/api)
@@ -50,15 +51,20 @@ export async function main(args) {
     'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
     repo: { type: 'string' }, 'verify-account': { type: 'boolean' }, 'test-session': { type: 'boolean' },
     'browser-session': { type: 'string' }, 'browser-origin': { type: 'string' },
+    'allow-unconfigured-browser-origin': { type: 'boolean' },
     'skill-source': { type: 'string' }, json: { type: 'boolean' }, 'cli-version': { type: 'string' }, 'api-url': { type: 'string' }, home: { type: 'string' },
   } });
   if (options.home) process.env[developmentInstall() ? 'DOOMER_DEV_HOME' : 'DOOMER_HOME'] = options.home;
   if (options.version) { console.log(metadata.version); return 0; }
   if (options.help || !positionals.length) { console.log(HELP); return 0; }
   const [command, ...extra] = positionals;
+  const allowUnconfiguredOrigin = options['allow-unconfigured-browser-origin'] === true;
+  if (allowUnconfiguredOrigin && (!Object.hasOwn(options, 'browser-session') || !Object.hasOwn(options, 'browser-origin'))) {
+    throw new Error('--allow-unconfigured-browser-origin requires --browser-session and --browser-origin.');
+  }
   const browserCheck = Object.hasOwn(options, 'browser-session') || Object.hasOwn(options, 'browser-origin');
-  if (browserCheck && (command !== 'doctor' || Object.keys(options).some(option => !['browser-session', 'browser-origin', 'repo'].includes(option)))) {
-    throw new Error('Use --browser-session and --browser-origin with a read-only doctor check.');
+  if (browserCheck && (command !== 'doctor' || Object.keys(options).some(option => !['browser-session', 'browser-origin', 'allow-unconfigured-browser-origin', 'repo'].includes(option)))) {
+    throw new Error('Browser session flags are supported only by read-only doctor checks.');
   }
   if (Object.hasOwn(options, 'claude-review-permission') && (!['allow', 'decline'].includes(options['claude-review-permission']) || !['install', 'onboard', 'update'].includes(command))) throw new Error('--claude-review-permission allow|decline requires install, onboard, or update.');
   if (Object.hasOwn(options, 'reviewer-policy') && (!['allow', 'decline'].includes(options['reviewer-policy']) || !['install', 'onboard', 'update'].includes(command))) throw new Error('--reviewer-policy allow|decline is supported only by install, onboard, and update, after reviewing the scoped proposal.');
@@ -90,7 +96,7 @@ export async function main(args) {
       }
       const result = await doctor({ fix: options.fix, apiURL: options['api-url'], repo: options.repo, runtime: true, verifyAccount: options['verify-account'] ?? false });
       if (browserCheck) {
-        const endpoint = doctorBrowserEndpoint(options['browser-origin'], result.api);
+        const endpoint = doctorBrowserEndpoint(options['browser-origin'], result.api, allowUnconfiguredOrigin);
         console.log(formatDoctor(result));
         await sendDoctorBrowserResult(endpoint, options['browser-session'], result);
         console.log('Result sent to Doomer Doctor.');
