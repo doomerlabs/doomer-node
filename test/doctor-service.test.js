@@ -148,3 +148,14 @@ test('doctor and revoke agree on directory service and preserve other grants', a
   await assert.rejects(exec(process.execPath, [entry, 'revoke'], { cwd, env }));
   assert.deepEqual(JSON.parse(await readFile(stateFile, 'utf8')).grants.map(g => g.api), [local]);
 });
+
+test('Doctor uses the requested checkout for service routing', async t => {
+  const { root, cwd, file } = await fixture(t);
+  await writeFile(file, 'DOOMER_API_URL=https://target.example/api');
+  const from = join(root, 'invocation');
+  await mkdir(from);
+  await writeFile(join(from, '.doomer.env'), 'DOOMER_API_URL=https://invocation.example/api');
+  const env = { ...process.env, DOOMER_HOME: root, DOOMER_DEV_INSTALL: '0' };
+  const result = await exec(process.execPath, [entry, 'doctor', '--json', '--repo', cwd], { cwd: from, env }).catch(error => error);
+  assert.equal(JSON.parse(result.stdout).api, 'https://target.example/api');
+});

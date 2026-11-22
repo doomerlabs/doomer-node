@@ -7,11 +7,11 @@ import { hookFiles } from './hooks.js';
 
 export async function inspectReviewerPolicy(executable, options = {}, execute = run) {
   const state = await readState();
-  const { api } = await doctorService({ explicit: options['api-url'], saved: state.api });
+  const { api } = await doctorService({ explicit: options['api-url'], saved: state.api, cwd: options.cwd });
   if (!state.grants.some(g => g.api === api)) return { policies: [], activation: 'not_required' };
   const result = JSON.parse((await execute(executable,
     ['--api-url', api, 'watch', 'codex-policy', '--manager-home', paths().home],
-    { timeout: 30000, maxBytes: 1024 * 1024, ...(options.codexHome ? { env: { ...process.env, CODEX_HOME: options.codexHome } } : {}) })).toString());
+    { timeout: 30000, maxBytes: 1024 * 1024, cwd: options.cwd, ...(options.codexHome ? { env: { ...process.env, CODEX_HOME: options.codexHome } } : {}) })).toString());
   if (!Array.isArray(result.policies)) throw new Error('Go CLI does not support Codex reviewer policy setup; upgrade the native CLI.');
   return result;
 }

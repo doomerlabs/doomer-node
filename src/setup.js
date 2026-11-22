@@ -162,7 +162,7 @@ export async function doctor({ policy, fix = false, apiURL, repo, runtime = fals
     result.installFailure = await readJSON(join(paths().home, 'last-install-failure.json'), null).catch(() => null);
   }
   let service;
-  try { service = await doctorService({ explicit: apiURL, saved: state.api }); }
+  try { service = await doctorService({ explicit: apiURL, saved: state.api, cwd: repo }); }
   catch (error) {
     const issue = { code: 'service_config_invalid', message: error.message, instruction: 'Fix the service URL or nearest .doomer.env, then run doctor again. No upload authorization was verified.' };
     return { ...result, ready: false, uploadApproved: false, reviewConfigured: false,
@@ -174,7 +174,7 @@ export async function doctor({ policy, fix = false, apiURL, repo, runtime = fals
   // may require the service; report actual failures instead of inventing a missing policy.
   if (policy) result.codexReviewPolicy = policy;
   else if (verifyAccount && state.agents.includes('codex') && state.grants.some(g => g.api === api)) {
-    result.codexReviewPolicy = await inspectReviewerPolicies(state.executable, { 'api-url': api });
+    result.codexReviewPolicy = await inspectReviewerPolicies(state.executable, { 'api-url': api, cwd: repo });
   }
   return { ...result, api, ...routing, ...installationGuidance(result, { api, localNative: state.native?.source === 'local', uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === api) }) };
 }
