@@ -159,3 +159,15 @@ test('Doctor uses the requested checkout for service routing', async t => {
   const result = await exec(process.execPath, [entry, 'doctor', '--json', '--repo', cwd], { cwd: from, env }).catch(error => error);
   assert.equal(JSON.parse(result.stdout).api, 'https://target.example/api');
 });
+
+test('Doctor retains the last installer failure when installation state is unreadable', async t => {
+  const { root, cwd } = await fixture(t);
+  const failure = { stage: 'native binary preparation', at: '2026-11-22T11:00:00Z' };
+  await writeFile(join(root, 'last-install-failure.json'), JSON.stringify(failure));
+  await writeFile(join(root, 'state.json'), '[broken json');
+  const env = { ...process.env, DOOMER_HOME: root, DOOMER_DEV_INSTALL: '0' };
+  const result = await exec(process.execPath, [entry, 'doctor', '--json'], { cwd, env }).catch(error => error);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.issues[0].code, 'installer_state_invalid');
+  assert.deepEqual(report.installFailure, failure);
+});

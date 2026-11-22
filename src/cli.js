@@ -30,6 +30,8 @@ Setup options:
   --reviewer-policy allow|decline  Decide the separately disclosed Codex policy
   --reviewer-policy-proposal HASH  Digest from that exact proposal
   --skill-source PATH         Install the doomer skill from a local source checkout
+  --repo PATH                  Checkout to diagnose with doctor
+  --verify-account             Opt in to remote account verification with doctor
   --json                       Machine-readable result
   --api-url URL                Service (or DOOMER_API_URL; default: https://doomer.ai/api)
 

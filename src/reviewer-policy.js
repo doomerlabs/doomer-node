@@ -69,7 +69,7 @@ async function configureSingleReviewerPolicy(executable, options, pick = select,
     // command revalidates both consent and proposal before applying a decision.
     const command = decision === 'allow' ? policy.install_command : policy.decline_command;
     if (!Array.isArray(command) || await realpath(command[0]) !== await realpath(executable)) throw new Error('Invalid reviewer policy command.');
-    await execute(command[0], command.slice(1), { timeout: 30000, maxBytes: 1024 * 1024, ...(options.codexHome ? { env: { ...process.env, CODEX_HOME: options.codexHome } } : {}) });
+    await execute(command[0], command.slice(1), { timeout: 30000, maxBytes: 1024 * 1024, cwd: options.cwd, ...(options.codexHome ? { env: { ...process.env, CODEX_HOME: options.codexHome } } : {}) });
     if (decision === 'allow') installedPolicy = true;
   }
   result = await inspect();

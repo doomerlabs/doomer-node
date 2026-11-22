@@ -116,7 +116,7 @@ export async function setup(options, mode) {
     await writeJSON(failureFile, { stage, at: new Date().toISOString() }).catch(() => {});
     throw error;
   }
-  if (outcome.status === 'configured') await rm(failureFile, { force: true }).catch(() => {});
+  if (['configured', 'canceled'].includes(outcome.status)) await rm(failureFile, { force: true }).catch(() => {});
   if (outcome.status === 'canceled') return null;
   if (outcome.status !== 'configured') throw new Error('Go installer did not report completion.');
   const result = await doctor({ apiURL: options['api-url'] });
@@ -134,6 +134,9 @@ export async function doctor({ policy, fix = false, apiURL, repo, runtime = fals
       for (const agent of before.agents) repairs.push(await installHooks(agent, before.executable));
     }
   }
+  const installFailure = runtime
+    ? await readJSON(join(paths().home, 'last-install-failure.json'), null).catch(() => null)
+    : undefined;
   let state;
   try {
     state = await readState();
@@ -143,7 +146,7 @@ export async function doctor({ policy, fix = false, apiURL, repo, runtime = fals
     const issue = { code: 'installer_state_invalid', message: `Cannot read Doomer installer state at ${paths().state}.`,
       instruction: 'Check that the state file is readable and valid. If the executable runs, use doomer doctor --no-upload for runtime checks.' };
     return { schema: 1, ready: false, cli: false, nativeStatus: 'unknown', commandStatus: 'unknown',
-      globalCommand: nativePath(), skill: 'unknown', hooks: [], issues: [issue],
+      globalCommand: nativePath(), skill: 'unknown', hooks: [], issues: [issue], installFailure,
       runtime: { status: 'unavailable', code: 'native_diagnostics_unavailable', message: issue.instruction } };
   }
   const cli = await hasInstaller(state);
@@ -159,7 +162,7 @@ export async function doctor({ policy, fix = false, apiURL, repo, runtime = fals
   if (runtime) {
     result.schema = 1;
     result.runtime = await inspectRuntimeDiagnostics(state, inspection, repo);
-    result.installFailure = await readJSON(join(paths().home, 'last-install-failure.json'), null).catch(() => null);
+    result.installFailure = installFailure;
   }
   let service;
   try { service = await doctorService({ explicit: apiURL, saved: state.api, cwd: repo }); }
