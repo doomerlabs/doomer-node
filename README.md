@@ -120,7 +120,7 @@ Use `doomer review --help` for review options, upload permission, and result han
 
 ## Diagnose setup
 
-Run `npx @doomerlabs/doomer doctor` for a readable diagnosis. `--json` includes structured `issues`, `next`, `uploadApproved` and `activation`. `ready` means installed configuration; it does not prove hook trust, upload consent or a completed review.
+Run `npx @doomerlabs/doomer@beta doctor` from the affected checkout for a readable diagnosis. This includes native diagnostics when a compatible installed executable is available and still shows installer checks when the executable is missing. For a native-only install, run `doomer doctor --no-upload`. Diagnosis does not send a support report. Use `--verify-account` with the npm manager when you want remote reviewer authorization checked. `--json` includes structured `issues`, `next`, `uploadApproved` and `activation`. `ready` means installed configuration; it does not prove hook trust, upload consent or a completed review.
 
 Setup, upload approval, revoke, and doctor select the service the watcher would use in the current
 directory: `--api-url`, the nearest `.doomer.env`, `DOOMER_API_URL`, the saved
@@ -389,8 +389,8 @@ existing Doomer hook installations under macOS Codex Accounts profiles. Empty
 account profiles are not automatically enrolled. Existing unrelated hooks,
 permissions, disabled-hook settings, and native trust are preserved.
 
-`npx @doomerlabs/doomer@beta doctor --json` reports each discovered profile and
-inspects its current reviewer policy without applying policy decisions. Policy
+`npx @doomerlabs/doomer@beta doctor --json` reports each discovered profile.
+Add `--verify-account` to inspect its current reviewer policy without applying policy decisions. Policy
 inspection may contact the configured service to verify account identity; a
 failure is reported as unknown authorization, not as a missing policy.
 

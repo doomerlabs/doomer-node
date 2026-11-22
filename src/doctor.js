@@ -47,6 +47,20 @@ export async function inspectNativeInstallation(state, env = process.env) {
     commandInstalled: commandStatus === 'available', commandStatus, globalCommand: command, resolvedCommand, onPath };
 }
 
+// Always pass --no-upload: older Go releases defaulted to submitting reports.
+export async function inspectRuntimeDiagnostics(state, inspection, repo) {
+  if (inspection.nativeStatus !== 'available') {
+    return { status: 'unavailable', code: 'native_diagnostics_unavailable', message: 'Review and watcher checks require a runnable Doomer binary.' };
+  }
+  try {
+    const args = ['doctor', '--no-upload', '--json'];
+    if (repo !== undefined) args.push('--repo', repo);
+    const report = JSON.parse(await run(state.native.path, args, { timeout: 45000, maxBytes: 4 * 1024 * 1024 }));
+    if (report.schema === 1 && Array.isArray(report.checks)) return { status: 'available', report };
+  } catch { /* Setup diagnostics remain available with an older or broken binary. */ }
+  return { status: 'unavailable', code: 'native_diagnostics_unavailable', message: 'The installed Doomer binary did not return local review diagnostics. Use the setup findings below, or check the affected session manually.' };
+}
+
 export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COLOR' in process.env) && process.env.TERM !== 'dumb' } = {}) {
   const paint = (text, code) => color ? `\u001b[${code}m${text}\u001b[0m` : text;
   const rows = [paint(developmentInstall() ? 'Doomer development installation' : 'Doomer installation', '1'), ''];
@@ -56,14 +70,15 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
   };
   row('Manager', `${metadata.version}${result.cli ? '' : ' — installation missing'}`, result.cli ? 'ok' : 'error');
   if (result.api) row('Service', `${result.api} (${result.apiSource}${result.apiConfigFile ? `: ${result.apiConfigFile}` : ''})`);
-  row('Go CLI', result.nativeStatus === 'available' ? result.nativeVersion : result.nativeStatus === 'missing' ? 'Missing' : 'Present, but could not run as Doomer', result.nativeStatus === 'available' ? 'ok' : 'error');
+  row('Go CLI', result.nativeStatus === 'available' ? result.nativeVersion : result.nativeStatus === 'missing' ? 'Missing' : result.nativeStatus === 'unknown' ? 'Could not verify' : 'Present, but could not run as Doomer', result.nativeStatus === 'available' ? 'ok' : 'error');
   if (result.nativeStatus === 'available' && result.nativeVersion !== result.recordedNativeVersion) {
     rows.push(`                 ${paint('Binary updated since installation', '2')}`);
   }
   const commandText = result.commandStatus === 'available'
     ? `${result.globalCommand}${result.onPath ? '' : ' — not selected by PATH'}`
     : result.commandStatus === 'different' ? `${result.globalCommand} — points to a different binary`
-    : result.commandStatus === 'unusable' ? `${result.globalCommand} — not runnable` : `${result.globalCommand} — missing`;
+    : result.commandStatus === 'unknown' ? `${result.globalCommand} — could not verify`
+      : result.commandStatus === 'unusable' ? `${result.globalCommand} — not runnable` : `${result.globalCommand} — missing`;
   row('Command', commandText, result.commandStatus === 'available' ? (result.onPath ? 'ok' : 'warning') : 'error');
   if (!result.onPath && result.resolvedCommand) rows.push(`                 PATH selects ${result.resolvedCommand}`);
   row('Skill', result.skill, result.skill === 'installed' ? 'ok' : 'error');
@@ -74,11 +89,20 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
     row(name, configured ? 'Hooks configured; activation unverified' : hook.error || (hook.enabled === false ? 'Hooks disabled' : 'Hooks need repair'), configured ? 'ok' : 'error');
   }
   if (result.hooks.some(h => h.agent === 'claude')) row('Claude review', result.claudeReviewPermission || 'unverified', result.claudeReviewPermission === 'allow' ? 'ok' : 'warning');
-  if (!result.automaticReviews) row('Watch', 'Current watch command unavailable', 'error');
+  if (result.automaticReviews === false) row('Watch', 'Current watch command unavailable', 'error');
   if (result.reviewerAuthorization) {
     const auth = result.reviewerAuthorization;
     row('Consent', auth.uploadConsent === 'approved' ? 'Snapshots, task context, finding decisions and explanations approved' : auth.uploadConsent === 'unverified' ? 'Unverified' : 'Not approved', auth.uploadConsent === 'approved' ? 'ok' : 'warning');
     if (auth.policy !== 'not_required') row('Review policy', `${auth.policy}; activation ${auth.activation}`, auth.policy === 'installed' ? 'ok' : 'warning');
+  }
+  if (result.installFailure) row('Last setup', `Failed during ${result.installFailure.stage} (${result.installFailure.at})`, 'warning');
+  if (result.runtime?.status === 'available') {
+    for (const check of result.runtime.report.checks) {
+      rows.push('', check.message);
+      if (check.next) rows.push(check.next);
+    }
+  } else if (result.runtime) {
+    row('Review data', result.runtime.message, 'warning');
   }
   rows.push('', paint(result.ready ? 'Installation ready' : 'Installation needs attention', result.ready ? '32;1' : '33;1'));
   if (!result.onPath && result.commandInstalled) rows.push(`Add ${dirname(result.globalCommand)} to the front of PATH to use this installation.`);

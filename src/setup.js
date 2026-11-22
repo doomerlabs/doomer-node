@@ -1,16 +1,16 @@
 import { homedir } from 'node:os';
 import { join, dirname, delimiter, isAbsolute } from 'node:path';
-import { stat, access, readFile } from 'node:fs/promises';
+import { stat, access, readFile, rm } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { pickAgents } from './agent-picker.js';
 import { agents, hookFile, installHooks, checkHooks } from './hooks.js';
-import { paths, metadata, nativePath, run, readState, exists, hasInstaller, interactiveTerminal } from './system.js';
+import { paths, metadata, nativePath, run, readState, readJSON, writeJSON, exists, hasInstaller, interactiveTerminal } from './system.js';
 import { doctorService } from './doctor-service.js';
 import { withNativeSetup, validateCLIVersion } from './native.js';
 import { inspectReviewerPolicies } from './reviewer-policy.js';
 import { SKILL_SOURCE } from './skill-source.js';
 import { reloadCodexHooks } from './codex.js';
-import { inspectNativeInstallation } from './doctor.js';
+import { inspectNativeInstallation, inspectRuntimeDiagnostics } from './doctor.js';
 import { installationGuidance, managerCommand, setupStep } from './recovery.js';
 
 // Look for runnable agent commands, without launching them or treating leftover
@@ -90,21 +90,33 @@ export async function setup(options, mode) {
     if (selected && options['reviewer-policy'] && !selected.includes('codex')) throw new Error('--reviewer-policy requires selecting codex.');
   }
   const retry = managerCommand(mode, { api: options['api-url'], cliVersion: options['cli-version'] });
-  const outcome = await setupStep('Running the Go installer', retry, () => withNativeSetup({ version: options['cli-version'] }, async native => {
-    const args = [
-      'npm-setup', '--mode', mode, '--manager-home', paths().home, '--executable', nativePath(),
-      '--release-version', native.version, '--release-source', native.source, '--release-sha256', native.sha256,
-      '--package-version', metadata.version, '--node', process.execPath,
-      '--default-skill-source', SKILL_SOURCE, '--skills-npm-option', '--package=skills',
-    ];
-    if (process.env.npm_execpath) args.push('--npm', process.env.npm_execpath);
-    for (const key of ['agent', 'api-url', 'skill-source', 'claude-review-permission', 'reviewer-policy', 'reviewer-policy-proposal']) {
-      if (options[key] !== undefined) args.push(`--${key}=${options[key]}`);
-    }
-    for (const key of ['no-hooks', 'approve-uploads']) if (options[key]) args.push(`--${key}`);
-    if (interactiveTerminal()) args.push('--interactive');
-    return JSON.parse((await run(native.path, args, { stdio: ['inherit', 'pipe', 'inherit'], maxBytes: 1024 * 1024 })).toString());
-  }));
+  const failureFile = join(paths().home, 'last-install-failure.json');
+  let stage = 'native binary preparation';
+  let outcome;
+  try {
+    outcome = await setupStep('Running the Go installer', retry, () => withNativeSetup({ version: options['cli-version'] }, async native => {
+      stage = 'agent setup';
+      const args = [
+        'npm-setup', '--mode', mode, '--manager-home', paths().home, '--executable', nativePath(),
+        '--release-version', native.version, '--release-source', native.source, '--release-sha256', native.sha256,
+        '--package-version', metadata.version, '--node', process.execPath,
+        '--default-skill-source', SKILL_SOURCE, '--skills-npm-option', '--package=skills',
+      ];
+      if (process.env.npm_execpath) args.push('--npm', process.env.npm_execpath);
+      for (const key of ['agent', 'api-url', 'skill-source', 'claude-review-permission', 'reviewer-policy', 'reviewer-policy-proposal']) {
+        if (options[key] !== undefined) args.push(`--${key}=${options[key]}`);
+      }
+      for (const key of ['no-hooks', 'approve-uploads']) if (options[key]) args.push(`--${key}`);
+      if (interactiveTerminal()) args.push('--interactive');
+      return JSON.parse((await run(native.path, args, { stdio: ['inherit', 'pipe', 'inherit'], maxBytes: 1024 * 1024 })).toString());
+    }));
+  } catch (error) {
+    // Keep failure context independent of installation rollback. Persist only
+    // the stage and timestamp, never raw errors or command output.
+    await writeJSON(failureFile, { stage, at: new Date().toISOString() }).catch(() => {});
+    throw error;
+  }
+  if (outcome.status === 'configured') await rm(failureFile, { force: true }).catch(() => {});
   if (outcome.status === 'canceled') return null;
   if (outcome.status !== 'configured') throw new Error('Go installer did not report completion.');
   const result = await doctor({ apiURL: options['api-url'] });
@@ -112,7 +124,7 @@ export async function setup(options, mode) {
   return { ...result, agents: outcome.agents, version: metadata.version };
 }
 
-export async function doctor({ policy, fix = false, apiURL } = {}) {
+export async function doctor({ policy, fix = false, apiURL, repo, runtime = false, verifyAccount = true } = {}) {
   let repairs;
   if (fix) {
     repairs = [];
@@ -122,7 +134,18 @@ export async function doctor({ policy, fix = false, apiURL } = {}) {
       for (const agent of before.agents) repairs.push(await installHooks(agent, before.executable));
     }
   }
-  const state = await readState();
+  let state;
+  try {
+    state = await readState();
+    if (!Array.isArray(state.agents) || !Array.isArray(state.grants)) throw new Error('Invalid installer state');
+  } catch (error) {
+    if (!runtime) throw error;
+    const issue = { code: 'installer_state_invalid', message: `Cannot read Doomer installer state at ${paths().state}.`,
+      instruction: 'Check that the state file is readable and valid. If the executable runs, use doomer doctor --no-upload for runtime checks.' };
+    return { schema: 1, ready: false, cli: false, nativeStatus: 'unknown', commandStatus: 'unknown',
+      globalCommand: nativePath(), skill: 'unknown', hooks: [], issues: [issue],
+      runtime: { status: 'unavailable', code: 'native_diagnostics_unavailable', message: issue.instruction } };
+  }
   const cli = await hasInstaller(state);
   const inspection = await inspectNativeInstallation(state);
   const automaticReviews = inspection.capabilities.watchAgentHook;
@@ -133,6 +156,11 @@ export async function doctor({ policy, fix = false, apiURL } = {}) {
     claudeReviewPermission: state.claudeReviewPermission?.decision || 'unverified',
     executable: state.executable || null, skill: skill ? 'installed' : 'missing', hooks,
     uploadGrants: state.grants.map(({ scope, repo, api, agents }) => ({ scope: scope || 'repository', repo, api, agents })) };
+  if (runtime) {
+    result.schema = 1;
+    result.runtime = await inspectRuntimeDiagnostics(state, inspection, repo);
+    result.installFailure = await readJSON(join(paths().home, 'last-install-failure.json'), null).catch(() => null);
+  }
   let service;
   try { service = await doctorService({ explicit: apiURL, saved: state.api }); }
   catch (error) {
@@ -145,7 +173,7 @@ export async function doctor({ policy, fix = false, apiURL } = {}) {
   // Inspect the current policy without applying decisions. Account verification
   // may require the service; report actual failures instead of inventing a missing policy.
   if (policy) result.codexReviewPolicy = policy;
-  else if (state.agents.includes('codex') && state.grants.some(g => g.api === api)) {
+  else if (verifyAccount && state.agents.includes('codex') && state.grants.some(g => g.api === api)) {
     result.codexReviewPolicy = await inspectReviewerPolicies(state.executable, { 'api-url': api });
   }
   return { ...result, api, ...routing, ...installationGuidance(result, { api, localNative: state.native?.source === 'local', uploadApproved: state.grants.some(g => g.scope === 'global' && g.api === api) }) };

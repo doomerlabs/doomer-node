@@ -11,7 +11,7 @@ test('manager help exposes setup commands without the removed review interface',
 
 test('manager rejects review commands and review-only options', async () => {
   await assert.rejects(exec(process.execPath, [entry, 'review']), /Unknown command review/);
-  for (const option of ['--base', '--repo', '--wait', '--timeout', '--approve-upload', '--show-diff']) {
+  for (const option of ['--base', '--wait', '--timeout', '--approve-upload', '--show-diff']) {
     await assert.rejects(exec(process.execPath, [entry, 'doctor', option, 'value']), /Unknown option/);
   }
 });
