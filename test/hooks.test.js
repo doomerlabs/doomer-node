@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mergeHooks, hookCommand, installHooks, withoutOwnedHooks } from '../src/hooks.js';
+import { mergeHooks, hookCommand, installHooks, checkHooks, withoutOwnedHooks } from '../src/hooks.js';
 
 test('hook repair is idempotent and preserves old Doomer, unrelated hooks, permissions and trust', () => {
   const original = { permissions: { deny: ['Bash(curl *)'] }, disableAllHooks: true, hooks: {
@@ -86,6 +86,16 @@ test('hooks ignore workspace overrides and remove obsolete saved roots', async t
   assert.equal(state.hookRoot, undefined);
   assert.equal(JSON.parse(original).trust, 'keep');
   assert.doesNotMatch(JSON.parse(original).hooks.UserPromptSubmit[0].hooks[0].command, /watch-root|workspace-one|workspace-two/);
+  assert.equal(JSON.parse(original).hooks.PreToolUse, undefined);
+  await writeFile(native, '#!/bin/sh\nprintf \'%s\\n\' \'{"capabilities":{"watchCodexEditTargets":true}}\'\n');
+  assert.equal((await checkHooks('codex', native)).configured, false);
+  assert.equal((await installHooks('codex', native)).changed, true);
+  const updated = JSON.parse(await readFile(settings, 'utf8'));
+  assert.deepEqual(updated.hooks.PreToolUse, [{ hooks: [
+    { type: 'command', command: hookCommand('codex', native), timeout: 25 },
+  ] }]);
+  assert.equal((await checkHooks('codex', native)).configured, true);
+  assert.equal((await installHooks('codex', native)).changed, false);
 });
 
 test('existing account profiles are diagnosed and repaired without enrolling empty profiles', async t => {
@@ -106,7 +116,6 @@ test('existing account profiles are diagnosed and repaired without enrolling emp
   const old = {disableAllHooks:true, trust:'preserve', hooks:{Stop:[{hooks:[{type:'command',command:"'/bin/doomer' agent-hook --managed-task-adapter"},{type:'command',command:'echo unrelated'}]}]}};
   await writeFile(profile, JSON.stringify(old));
   await writeFile(empty, '{}');
-  const {checkHooks} = await import('../src/hooks.js');
   const diagnosis = await checkHooks('codex', '/bin/doomer');
   assert.equal(diagnosis.configured, false);
   assert.ok(diagnosis.profiles.some(p => p.file === profile && !p.configured));
