@@ -1,13 +1,14 @@
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { readFile, readdir, lstat } from 'node:fs/promises';
-import { atomicWrite, quote, readJSON, locked, paths, nativePath, changeState, developmentInstall } from './system.js';
+import { atomicWrite, quote, readJSON, locked, paths, nativePath, changeState, developmentInstall, run } from './system.js';
 
 export const agents = ['claude', 'codex'];
-export const events = ['UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd', 'PermissionDenied'];
-export const eventsFor = agent => ['UserPromptSubmit', 'Stop', ...(agent === 'codex' ? ['Interrupt'] : ['SessionEnd', 'PermissionDenied'])];
-const retiredEvents = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure'];
-const timeouts = { UserPromptSubmit: 45, Stop: 60, Interrupt: 15, SessionEnd: 15, PermissionDenied: 5 };
+export const events = ['UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd', 'PermissionDenied', 'PreToolUse'];
+export const eventsFor = (agent, editTargets = false) => ['UserPromptSubmit', 'Stop',
+  ...(agent === 'codex' ? ['Interrupt', ...(editTargets ? ['PreToolUse'] : [])] : ['SessionEnd', 'PermissionDenied'])];
+const retiredEvents = ['PostToolUse', 'PostToolUseFailure'];
+const timeouts = { UserPromptSubmit: 45, Stop: 60, Interrupt: 15, SessionEnd: 15, PermissionDenied: 5, PreToolUse: 25 };
 const marker = () => developmentInstall() ? '--owner=doomer-node-dev' : '--owner=doomer-node';
 export function hookFile(agent) {
   if (agent === 'claude') return join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'settings.json');
@@ -95,19 +96,20 @@ export async function removeHooks(file) {
   });
 }
 
-export function mergeHooks(config, agent, executable = nativePath()) {
+export function mergeHooks(config, agent, executable = nativePath(), editTargets = false) {
   validate(config);
   const next = structuredClone(config);
   next.hooks ??= {};
   for (const event of [...events, ...retiredEvents]) {
+    if (event === 'PreToolUse' && editTargets === null) continue;
     const kept = (next.hooks[event] || []).map(group => ({ ...group, hooks: group.hooks.filter(h => !owned(h)) })).filter(g => g.hooks.length);
-    if (retiredEvents.includes(event) || !eventsFor(agent).includes(event)) {
+    if (!eventsFor(agent, editTargets).includes(event)) {
       if (kept.length) next.hooks[event] = kept;
       else delete next.hooks[event];
       continue;
     }
     const handler = { type: 'command', command: hookCommand(agent, executable), timeout: timeouts[event] };
-    if (agent === 'codex') handler.statusMessage = `${developmentInstall() ? 'Doomer development' : 'Doomer'}: ${event === 'UserPromptSubmit' ? 'start watch' : 'stop watch'}`;
+    if (agent === 'codex' && event !== 'PreToolUse') handler.statusMessage = `${developmentInstall() ? 'Doomer development' : 'Doomer'}: ${event === 'UserPromptSubmit' ? 'start watch' : 'stop watch'}`;
     // Keep production before development so reinstalling either profile does
     // not change the other's positional trust key in Codex.
     const other = developmentInstall() ? '--owner=doomer-node' : '--owner=doomer-node-dev';
@@ -119,12 +121,12 @@ export function mergeHooks(config, agent, executable = nativePath()) {
   }
   return next;
 }
-async function installHookFile(agent, executable, file) {
+async function installHookFile(agent, executable, file, editTargets) {
   await changeState(state => { delete state.hookRoot; state.hookFiles = [...new Set([...(state.hookFiles || []), file])]; });
   return locked(file, async () => {
     let original;
     try { original = await readFile(file, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const next = mergeHooks(original === undefined ? {} : JSON.parse(original), agent, executable);
+    const next = mergeHooks(original === undefined ? {} : JSON.parse(original), agent, executable, editTargets);
     const content = `${JSON.stringify(next, null, 2)}\n`;
     if (original === content) return { agent, file, changed: false };
     if (original !== undefined) await atomicWrite(`${file}.before-doomer-node-${Date.now()}`, original);
@@ -132,12 +134,12 @@ async function installHookFile(agent, executable, file) {
     return { agent, file, changed: true };
   });
 }
-async function checkHookFile(agent, executable, file) {
+async function checkHookFile(agent, executable, file, editTargets) {
   try {
     const config = await readJSON(file, {});
     validate(config);
     const command = hookCommand(agent, executable);
-    const configured = eventsFor(agent).every(event => (config.hooks?.[event] || []).some(group => {
+    const configured = eventsFor(agent, editTargets).every(event => (config.hooks?.[event] || []).some(group => {
       const matches = event === 'PermissionDenied' ? group.matcher === 'Bash' : !group.matcher || group.matcher === '.*';
       return matches && group.hooks.some(h => h.type === 'command' && h.command === command && h.async !== true);
     }));
@@ -145,16 +147,32 @@ async function checkHookFile(agent, executable, file) {
   } catch (error) { return { agent, file, configured: false, error: error.message }; }
 }
 
+// The manager also supports older pinned CLI releases that lack this hook.
+async function supportsEditTargets(agent, executable) {
+  if (agent !== 'codex') return false;
+  try {
+    const output = await run(executable, ['runtime-info'], { timeout: 5000, maxBytes: 16384 });
+    return JSON.parse(output.toString()).capabilities?.watchCodexEditTargets === true;
+  } catch { return null; }
+}
+
+function editTargetStatus(agent, editTargets) {
+  if (agent !== 'codex') return {};
+  return { editTargets: editTargets === null ? 'probe_failed' : editTargets ? 'supported' : 'unsupported' };
+}
+
 export async function installHooks(agent, executable = nativePath()) {
+  const editTargets = await supportsEditTargets(agent, executable);
   const results = [];
-  for (const file of await hookFiles(agent)) results.push(await installHookFile(agent, executable, file));
-  return { agent, file: hookFile(agent), changed: results.some(result => result.changed), profiles: results };
+  for (const file of await hookFiles(agent)) results.push(await installHookFile(agent, executable, file, editTargets));
+  return { agent, file: hookFile(agent), changed: results.some(result => result.changed), profiles: results, ...editTargetStatus(agent, editTargets) };
 }
 
 export async function checkHooks(agent, executable = nativePath()) {
+  const editTargets = await supportsEditTargets(agent, executable);
   const profiles = [];
-  for (const file of await hookFiles(agent)) profiles.push(await checkHookFile(agent, executable, file));
+  for (const file of await hookFiles(agent)) profiles.push(await checkHookFile(agent, executable, file, editTargets));
   return { agent, file: hookFile(agent), configured: profiles.every(p => p.configured),
-    enabled: profiles.every(p => p.enabled !== false), activation: 'unverified', profiles,
+    enabled: profiles.every(p => p.enabled !== false), activation: 'unverified', profiles, ...editTargetStatus(agent, editTargets),
     ...(profiles.find(p => p.error) ? { error: profiles.find(p => p.error).error } : {}) };
 }
