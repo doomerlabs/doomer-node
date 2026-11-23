@@ -96,6 +96,18 @@ test('hooks ignore workspace overrides and remove obsolete saved roots', async t
   ] }]);
   assert.equal((await checkHooks('codex', native)).configured, true);
   assert.equal((await installHooks('codex', native)).changed, false);
+
+  await writeFile(native, '#!/bin/sh\nexit 1\n');
+  assert.equal((await checkHooks('codex', native)).editTargets, 'probe_failed');
+  const failedProbe = await installHooks('codex', native);
+  assert.equal(failedProbe.editTargets, 'probe_failed');
+  assert.equal(failedProbe.changed, false);
+  assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')), updated);
+
+  await writeFile(native, '#!/bin/sh\nprintf \'%s\\n\' \'{"capabilities":{}}\'\n');
+  assert.equal((await checkHooks('codex', native)).editTargets, 'unsupported');
+  assert.equal((await installHooks('codex', native)).changed, true);
+  assert.equal(JSON.parse(await readFile(settings, 'utf8')).hooks.PreToolUse, undefined);
 });
 
 test('existing account profiles are diagnosed and repaired without enrolling empty profiles', async t => {

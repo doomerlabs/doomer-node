@@ -101,6 +101,7 @@ export function mergeHooks(config, agent, executable = nativePath(), editTargets
   const next = structuredClone(config);
   next.hooks ??= {};
   for (const event of [...events, ...retiredEvents]) {
+    if (event === 'PreToolUse' && editTargets === null) continue;
     const kept = (next.hooks[event] || []).map(group => ({ ...group, hooks: group.hooks.filter(h => !owned(h)) })).filter(g => g.hooks.length);
     if (!eventsFor(agent, editTargets).includes(event)) {
       if (kept.length) next.hooks[event] = kept;
@@ -152,14 +153,19 @@ async function supportsEditTargets(agent, executable) {
   try {
     const output = await run(executable, ['runtime-info'], { timeout: 5000, maxBytes: 16384 });
     return JSON.parse(output.toString()).capabilities?.watchCodexEditTargets === true;
-  } catch { return false; }
+  } catch { return null; }
+}
+
+function editTargetStatus(agent, editTargets) {
+  if (agent !== 'codex') return {};
+  return { editTargets: editTargets === null ? 'probe_failed' : editTargets ? 'supported' : 'unsupported' };
 }
 
 export async function installHooks(agent, executable = nativePath()) {
   const editTargets = await supportsEditTargets(agent, executable);
   const results = [];
   for (const file of await hookFiles(agent)) results.push(await installHookFile(agent, executable, file, editTargets));
-  return { agent, file: hookFile(agent), changed: results.some(result => result.changed), profiles: results };
+  return { agent, file: hookFile(agent), changed: results.some(result => result.changed), profiles: results, ...editTargetStatus(agent, editTargets) };
 }
 
 export async function checkHooks(agent, executable = nativePath()) {
@@ -167,6 +173,6 @@ export async function checkHooks(agent, executable = nativePath()) {
   const profiles = [];
   for (const file of await hookFiles(agent)) profiles.push(await checkHookFile(agent, executable, file, editTargets));
   return { agent, file: hookFile(agent), configured: profiles.every(p => p.configured),
-    enabled: profiles.every(p => p.enabled !== false), activation: 'unverified', profiles,
+    enabled: profiles.every(p => p.enabled !== false), activation: 'unverified', profiles, ...editTargetStatus(agent, editTargets),
     ...(profiles.find(p => p.error) ? { error: profiles.find(p => p.error).error } : {}) };
 }
