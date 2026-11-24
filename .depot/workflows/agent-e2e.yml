@@ -45,7 +45,7 @@ jobs:
         with:
           repository: doomerlabs/doomer
           # Source commit of the published CLI pinned by package.json.
-          ref: e66dd66e097a223445cde41ede18c226cab1efcc
+          ref: c80e6bf91306412cd6b38c44570ba4dafa6edd73
           path: candidate-cli
           persist-credentials: false
       - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c
@@ -101,7 +101,7 @@ jobs:
           if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch': args.append('--full-suite')
           args += ['--cli-archive',os.environ['CANDIDATE_ARCHIVE'],'--candidate-label',os.environ['CANDIDATE_VERSION'],
                    '--node-source',os.environ['COMPONENT_SOURCE'],
-                   '--skills-ref','3b496d0ab954b5791b81a0c1e452894e3667e5a9']
+                   '--skills-ref','f952aa08f7a967cb760e5c69b65d17ec5461146d']
           raise SystemExit(subprocess.call(args))
           PYTHON
       - name: Validate selected result evidence
