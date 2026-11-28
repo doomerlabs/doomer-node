@@ -4,7 +4,7 @@ import { isAbsolute, join } from 'node:path';
 import { run } from './system.js';
 
 // Reviewed production skill revision. Change only with matching onboarding validation.
-export const SKILL_SOURCE = 'doomerlabs/skills#f952aa08f7a967cb760e5c69b65d17ec5461146d';
+export const SKILL_SOURCE = 'doomerlabs/skills#f76d9d70b549d767fadf95a6207a082829a66c66';
 
 export async function withPinnedSkillCheckout(repository, revision, install) {
   if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error('Invalid pinned skill revision.');

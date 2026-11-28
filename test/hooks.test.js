@@ -42,6 +42,20 @@ test('rejects malformed settings before changing them', () => {
   for (const config of [[], { hooks: [] }, { hooks: { Stop: {} } }, { hooks: { Stop: [{ hooks: [null] }] } }]) assert.throws(() => mergeHooks(config, 'codex'), /Invalid/);
 });
 
+test('Copilot hook replacement and removal preserve unrelated flat handlers', () => {
+  const otherHook = { type: 'command', command: 'other', timeoutSec: 5 };
+  const original = { version: 1, hooks: { agentStop: [otherHook] } };
+  const installed = mergeHooks(original, 'copilot', '/first/doomer');
+  installed.hooks.agentStop.push(otherHook);
+  const updated = mergeHooks(installed, 'copilot', '/next/doomer');
+  assert.deepEqual(updated.hooks.agentStop, [otherHook, {
+    type: 'command', command: `${hookCommand('copilot', '/next/doomer')} --event=agentStop`, timeoutSec: 60,
+  }, otherHook]);
+  assert.deepEqual(mergeHooks(updated, 'copilot', '/next/doomer'), updated);
+  assert.deepEqual(withoutOwnedHooks(updated, true), { version: 1, hooks: { agentStop: [otherHook, otherHook] } });
+  assert.throws(() => mergeHooks({ version: 2 }, 'copilot'), /configuration version/);
+});
+
 test('production and development hook slots stay stable across reinstalls', t => {
   const previous = process.env.DOOMER_DEV_INSTALL;
   t.after(() => { if (previous === undefined) delete process.env.DOOMER_DEV_INSTALL; else process.env.DOOMER_DEV_INSTALL = previous; });

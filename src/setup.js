@@ -1,9 +1,9 @@
 import { homedir } from 'node:os';
-import { join, dirname, delimiter, isAbsolute } from 'node:path';
+import { join, delimiter, isAbsolute } from 'node:path';
 import { stat, access, readFile, rm } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { pickAgents } from './agent-picker.js';
-import { agents, hookFile, installHooks, checkHooks } from './hooks.js';
+import { agents, agentLabels, agentSkillPath, installHooks, checkHooks } from './hooks.js';
 import { paths, metadata, nativePath, run, readState, readJSON, writeJSON, exists, hasInstaller, interactiveTerminal } from './system.js';
 import { doctorService } from './doctor-service.js';
 import { withNativeSetup, validateCLIVersion } from './native.js';
@@ -44,14 +44,14 @@ export async function selectAgents(options) {
   if (options['no-hooks']) return [];
   if (options.agent !== undefined) {
     const selected = options.agent.split(',').map(agent => agent.trim()).filter(Boolean);
-    if (!selected.length || selected.some(agent => !agents.includes(agent))) throw new Error('Supported agents: claude,codex. Use --no-hooks for standalone reviews.');
+    if (!selected.length || selected.some(agent => !agents.includes(agent))) throw new Error('Supported agents: claude,codex,copilot. Use --no-hooks for standalone reviews.');
     return [...new Set(selected)];
   }
 
   const saved = (await readState()).agents.filter(agent => agents.includes(agent));
   const detected = await detectInstalledAgents();
   const defaults = saved.length ? saved : detected;
-  const label = agent => agent === 'claude' ? 'Claude Code' : 'Codex';
+  const label = agent => agentLabels[agent];
   if (!interactiveTerminal()) {
     if (!options.json) console.error(defaults.length
       ? `Agents: ${defaults.map(label).join(', ')} (${saved.length ? 'previous selection' : 'detected'}).`
@@ -64,9 +64,10 @@ export async function selectAgents(options) {
 
 export async function skillPresent(selected = []) {
   const canonical = join(homedir(), '.agents', 'skills', 'doomer', 'SKILL.md');
-  const groups = selected.length ? selected.map(agent => agent === 'codex'
-    ? [canonical, join(dirname(hookFile(agent)), 'skills', 'doomer', 'SKILL.md')]
-    : [join(dirname(hookFile(agent)), 'skills', 'doomer', 'SKILL.md')]) : [[canonical]];
+  const groups = selected.length ? selected.map(agent => {
+    const profile = join(agentSkillPath(agent), 'SKILL.md');
+    return agent === 'claude' ? [profile] : [canonical, profile];
+  }) : [[canonical]];
   for (const locations of groups) {
     let found = false;
     for (const file of locations) {
@@ -94,7 +95,8 @@ export async function setup(options, mode) {
   let stage = 'native binary preparation';
   let outcome;
   try {
-    outcome = await setupStep('Running the Go installer', retry, () => withNativeSetup({ version: options['cli-version'] }, async native => {
+    const requireCopilot = options['copilot-project-hooks'] || options.agent?.split(',').some(agent => agent.trim() === 'copilot');
+    outcome = await setupStep('Running the Go installer', retry, () => withNativeSetup({ version: options['cli-version'], requireCopilot }, async native => {
       stage = 'agent setup';
       const args = [
         'npm-setup', '--mode', mode, '--manager-home', paths().home, '--executable', nativePath(),
@@ -106,7 +108,7 @@ export async function setup(options, mode) {
       for (const key of ['agent', 'api-url', 'skill-source', 'claude-review-permission', 'reviewer-policy', 'reviewer-policy-proposal']) {
         if (options[key] !== undefined) args.push(`--${key}=${options[key]}`);
       }
-      for (const key of ['no-hooks', 'approve-uploads']) if (options[key]) args.push(`--${key}`);
+      for (const key of ['no-hooks', 'approve-uploads', 'copilot-project-hooks']) if (options[key]) args.push(`--${key}`);
       if (interactiveTerminal()) args.push('--interactive');
       return JSON.parse((await run(native.path, args, { stdio: ['inherit', 'pipe', 'inherit'], maxBytes: 1024 * 1024 })).toString());
     }));
@@ -152,7 +154,8 @@ export async function doctor({ policy, fix = false, apiURL, repo, runtime = fals
   const cli = await hasInstaller(state);
   const inspection = await inspectNativeInstallation(state);
   const automaticReviews = inspection.capabilities.watchAgentHook;
-  const hooks = await Promise.all(state.agents.map(agent => checkHooks(agent, state.executable)));
+  const checkout = runtime ? repo ?? process.cwd() : undefined;
+  const hooks = await Promise.all(state.agents.map(agent => checkHooks(agent, state.executable, checkout)));
   const skill = await skillPresent(state.agents);
   const ready = cli && inspection.nativeStatus === 'available' && automaticReviews && inspection.commandInstalled && skill && hooks.every(h => h.configured && h.enabled);
   const result = { ready, cli, ...(repairs ? { repairs } : {}), ...inspection, automaticReviews, version: state.cliVersion || null,

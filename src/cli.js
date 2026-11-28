@@ -24,7 +24,8 @@ Usage: npx @doomerlabs/doomer <command>
   revoke                       Revoke saved upload approval for this service
 
 Setup options:
-  --agent claude,codex         Agents to configure (picker or detected defaults when omitted)
+  --agent claude,codex,copilot Agents to configure (picker or detected defaults when omitted)
+  --copilot-project-hooks      Install Copilot hooks only in the current Git checkout
   --no-hooks                   Install without automatic review hooks
   --approve-uploads            Approve all Doomer review uploads to this service
   --claude-review-permission allow|decline  Decide scoped Claude review permissions
@@ -48,7 +49,7 @@ export async function main(args) {
     fix: { type: 'boolean' }, check: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
     agent: { type: 'string' },
     'claude-review-permission': { type: 'string' }, 'reviewer-policy': { type: 'string' }, 'reviewer-policy-proposal': { type: 'string' },
-    'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' },
+    'no-hooks': { type: 'boolean' }, 'approve-uploads': { type: 'boolean' }, 'copilot-project-hooks': { type: 'boolean' },
     repo: { type: 'string' }, 'verify-account': { type: 'boolean' }, 'test-session': { type: 'boolean' },
     'browser-session': { type: 'string' }, 'browser-origin': { type: 'string' },
     'allow-unconfigured-browser-origin': { type: 'boolean' },
@@ -75,6 +76,12 @@ export async function main(args) {
   if (Object.hasOwn(options, 'check') && command !== 'upgrade') throw new Error('--check is supported only by upgrade.');
   if (Object.hasOwn(options, 'cli-version') && !['install', 'onboard'].includes(command)) throw new Error('--cli-version is supported only by install and onboard.');
   if (Object.hasOwn(options, 'skill-source') && !['install', 'onboard'].includes(command)) throw new Error('--skill-source is supported only by install and onboard.');
+  if (options['copilot-project-hooks'] && (!['install', 'onboard'].includes(command) || options['no-hooks'])) {
+    throw new Error('--copilot-project-hooks requires install or onboard with Copilot selected.');
+  }
+  if (options['copilot-project-hooks'] && options.agent !== undefined && !options.agent.split(',').some(agent => agent.trim() === 'copilot')) {
+    throw new Error('--copilot-project-hooks requires selecting copilot.');
+  }
   if (extra.length) throw new Error('Unexpected command arguments. Run npx @doomerlabs/doomer --help.');
   switch (command) {
     case 'install':
@@ -113,7 +120,7 @@ export async function main(args) {
         else if (selected !== null) console.log('No agent hooks selected.');
         return 0;
       }
-      const native = await installNative();
+      const native = await installNative({ requireCopilot: selected.includes('copilot') });
       if (!native.watch) throw new Error('The Go CLI needs the current watch command. Build the current Go branch and rerun with DOOMER_NATIVE_BINARY.');
       const hooks = [];
       for (const agent of selected) hooks.push(await installHooks(agent, native.executable));

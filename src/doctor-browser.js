@@ -5,7 +5,7 @@ const diagnosticCodes = new Set([
   'hook_evidence_missing', 'hook_activity_recorded', 'review_completed', 'assessment_timed_out',
   'review_failed', 'review_status_recorded', 'review_evidence_missing', 'cli_changed_since_success',
   'installer_state_invalid', 'service_config_invalid', 'native_diagnostics_unavailable', 'collection_failed',
-  'installation_incomplete', 'cli_incompatible', 'hook_config_invalid', 'hooks_missing', 'hooks_disabled',
+  'installation_incomplete', 'cli_incompatible', 'hook_config_invalid', 'hooks_missing', 'hooks_disabled', 'hooks_conflict',
   'reviewer_policy_unavailable', 'reviewer_policy_declined', 'reviewer_policy_missing',
   'uploads_not_approved', 'command_not_on_path',
 ]);

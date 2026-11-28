@@ -1,6 +1,7 @@
 import { access, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { supportsWatch } from './native.js';
+import { agentLabels } from './hooks.js';
 import { delimiter, dirname, join, basename } from 'node:path';
 import { metadata, nativePath, developmentInstall, run } from './system.js';
 
@@ -84,11 +85,12 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
   row('Skill', result.skill, result.skill === 'installed' ? 'ok' : 'error');
   for (const hook of result.hooks) {
     const configured = hook.configured && hook.enabled;
-    const name = hook.agent === 'claude' ? 'Claude Code' : 'Codex';
+    const name = agentLabels[hook.agent] || hook.agent;
     for (const profile of hook.profiles || []) rows.push(`                 ${profile.file}: ${profile.error || (profile.enabled === false ? (profile.configured ? 'disabled' : 'disabled; hooks need repair') : profile.configured ? 'configured; activation unverified' : 'hooks need repair')}`);
     row(name, configured ? 'Hooks configured; activation unverified' : hook.error || (hook.enabled === false ? 'Hooks disabled' : 'Hooks need repair'), configured ? 'ok' : 'error');
   }
   if (result.hooks.some(h => h.agent === 'claude')) row('Claude review', result.claudeReviewPermission || 'unverified', result.claudeReviewPermission === 'allow' ? 'ok' : 'warning');
+  if (result.hooks.some(h => h.agent === 'copilot')) row('Copilot review', 'Copilot may ask for shell command or path access approval.', 'warning');
   if (result.automaticReviews === false) row('Watch', 'Current watch command unavailable', 'error');
   if (result.reviewerAuthorization) {
     const auth = result.reviewerAuthorization;
@@ -117,11 +119,13 @@ export function formatDoctor(result, { color = process.stdout.isTTY && !('NO_COL
 }
 
 export function formatSetup(result) {
-  const labels = result.agents.map(agent => agent === 'claude' ? 'Claude Code' : 'Codex');
+  const labels = result.agents.map(agent => agentLabels[agent] || agent);
   const names = labels.join(' and ');
   const lines = [result.ready ? `Doomer is set up${names ? ` for ${names}` : ' without automatic review hooks'}.` : 'Doomer setup needs attention.'];
   const pathIssue = result.issues.find(issue => issue.code === 'command_not_on_path');
   const setupIssues = result.issues.filter(issue => issue !== pathIssue);
+  const copilot = result.agents.includes('copilot');
+  const hookAgents = result.agents.filter(agent => agent !== 'copilot').map(agent => agentLabels[agent] || agent).join(' or ');
   for (const issue of setupIssues) {
     lines.push('', issue.message);
     if (issue.command) lines.push(`Run: ${issue.command}`);
@@ -133,11 +137,15 @@ export function formatSetup(result) {
     lines.push(`  1. Open the repository you want reviewed in ${labels.join(' or ')}.`);
     if (result.agents.includes('claude')) lines.push('     Claude Code: start a fresh session to load the hooks.');
     if (result.codexReload?.restartRequired) lines.push('     Codex: start a new session to load the hooks.');
-    lines.push('  2. In that session, open /hooks, find Doomer, and trust its hooks.');
+    if (result.agents.includes('copilot')) lines.push('     GitHub Copilot CLI: start a fresh session to load the hooks.');
+    lines.push(hookAgents ? `  2. In that session, open /hooks in ${hookAgents}, find Doomer, and trust its hooks.` :
+      '  2. Follow Copilot’s trust prompts for the checkout.');
+    if (copilot && hookAgents) lines.push('     GitHub Copilot CLI: follow its trust prompts for the checkout.');
     lines.push('  3. Ask your agent to make a small code change. A completed review confirms setup.');
   } else if (result.ready && labels.length) {
-    lines.push('', 'After approving uploads, open /hooks in your agent and trust Doomer.');
+    lines.push('', hookAgents ? `After approving uploads, open /hooks in ${hookAgents} and trust Doomer.` : 'After approving uploads, follow Copilot’s trust prompts for the checkout.');
     if (result.agents.includes('claude')) lines.push('Claude Code: start a fresh session to load the hooks.');
+    if (copilot) lines.push(hookAgents ? 'GitHub Copilot CLI: start a fresh session and follow its trust prompts for the checkout.' : 'GitHub Copilot CLI: start a fresh session to load the hooks.');
   } else if (!labels.length && result.enableAutomaticReviews) {
     lines.push('', 'Enable automatic reviews:', result.enableAutomaticReviews.command, result.enableAutomaticReviews.instruction);
   }
@@ -154,7 +162,7 @@ export function formatSetup(result) {
 }
 
 // Also available before a native binary has been installed.
-export const sessionTestPrompt = `Paste this entire prompt in the affected Codex or Claude Code chat:
+export const sessionTestPrompt = `Paste this entire prompt in the affected Codex, Claude Code, or GitHub Copilot CLI chat:
 
 Doomer Doctor: Test this session
 

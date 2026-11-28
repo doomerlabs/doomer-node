@@ -38,14 +38,14 @@ jobs:
         with:
           repository: doomerlabs/agent-e2e
           token: ${{ secrets.AGENT_E2E_READ_TOKEN }}
-          ref: 279b6ac3190d600f8e1fde5b0f4e3014129655c6
+          ref: 657377543d26def550e65a1f3ac31c9c11304078
           path: e2e-runner
           persist-credentials: false
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: doomerlabs/doomer
           # Source commit of the published CLI pinned by package.json.
-          ref: c80e6bf91306412cd6b38c44570ba4dafa6edd73
+          ref: 9a9f00ee47cd3c26168b4e86160343381bbd17ea
           path: candidate-cli
           persist-credentials: false
       - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c
@@ -101,7 +101,7 @@ jobs:
           if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch': args.append('--full-suite')
           args += ['--cli-archive',os.environ['CANDIDATE_ARCHIVE'],'--candidate-label',os.environ['CANDIDATE_VERSION'],
                    '--node-source',os.environ['COMPONENT_SOURCE'],
-                   '--skills-ref','f952aa08f7a967cb760e5c69b65d17ec5461146d']
+                   '--skills-ref','f76d9d70b549d767fadf95a6207a082829a66c66']
           raise SystemExit(subprocess.call(args))
           PYTHON
       - name: Validate selected result evidence

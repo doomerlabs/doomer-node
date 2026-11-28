@@ -38,6 +38,34 @@ test('configured hooks do not imply upload consent or activation', () => {
 
 });
 
+test('setup and Doctor describe trust for the selected agents in a mixed Copilot installation', () => {
+  const state = installed();
+  state.agents.push('copilot');
+  state.hooks.push({ agent: 'copilot', file: '/tmp/copilot/hooks/doomer-node.json', configured: true, enabled: true });
+  const guidance = installationGuidance(state, { uploadApproved: true });
+  assert.match(guidance.next, /Open \/hooks in Codex/);
+  assert.match(guidance.next, /fresh Copilot session and follow its trust prompts/);
+  const unapproved = installationGuidance(state, { uploadApproved: false });
+  assert.equal(unapproved.reviewConfigured, false);
+  const consent = unapproved.issues.find(issue => issue.code === 'uploads_not_approved');
+  assert.ok(consent);
+  assert.match(consent.command, /onboard.*--agent codex,copilot/);
+  assert.doesNotMatch(consent.command, /--approve-uploads/);
+  for (const result of [guidance, unapproved]) {
+    const formatted = formatSetup({ ...state, ...result });
+    assert.match(formatted, /open \/hooks in Codex/);
+    assert.match(formatted, /GitHub Copilot CLI: follow its trust prompts|GitHub Copilot CLI: start a fresh session and follow its trust prompts/);
+    assert.doesNotMatch(formatted, /Claude Code/);
+  }
+  const doctor = formatDoctor({ ...state, ...guidance }, { color: false });
+  assert.match(doctor, /Open \/hooks in Codex/);
+  assert.match(doctor, /fresh Copilot session and follow its trust prompts/);
+  assert.doesNotMatch(doctor, /Claude Code/);
+  const doctorWithoutConsent = formatDoctor({ ...state, ...unapproved }, { color: false });
+  assert.ok(doctorWithoutConsent.includes(consent.message));
+  assert.doesNotMatch(doctorWithoutConsent, /--approve-uploads|Claude Code/);
+});
+
 test('repair guidance distinguishes missing hooks, disabled hooks and invalid settings', () => {
   for (const [hook, code] of [
     [{ configured: false, enabled: true }, 'hooks_missing'],

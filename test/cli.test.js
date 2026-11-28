@@ -65,3 +65,9 @@ test('doctor repair flag is rejected for other commands', async () => {
     await assert.rejects(exec(process.execPath, [entry, command, '--fix']), /supported only by doctor/);
   }
 });
+
+test('Copilot checkout hooks require a compatible setup command and agent selection', async () => {
+  await assert.rejects(exec(process.execPath, [entry, 'install', '--agent', 'codex,claude', '--copilot-project-hooks']), /requires selecting copilot/);
+  await assert.rejects(exec(process.execPath, [entry, 'onboard', '--no-hooks', '--copilot-project-hooks']), /requires install or onboard with Copilot selected/);
+  await assert.rejects(exec(process.execPath, [entry, 'update', '--copilot-project-hooks']), /requires install or onboard with Copilot selected/);
+});
