@@ -73,6 +73,8 @@ test('agent detection finds runnable PATH entries, including symlinks, without r
   assert.deepEqual(await detectInstalledAgents(env), ['codex']);
   await writeFile(join(bin, `claude${extension}`), 'do not execute this', { mode: 0o755 });
   assert.deepEqual(await detectInstalledAgents(env), ['claude', 'codex']);
+  await writeFile(join(bin, `copilot${extension}`), 'do not execute this', { mode: 0o755 });
+  assert.deepEqual(await detectInstalledAgents(env), ['claude', 'codex', 'copilot']);
 });
 
 test('agent detection excludes stale config, directories, and non-executable files', async t => {

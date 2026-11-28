@@ -101,6 +101,15 @@ test('CLI-only upgrade check is read-only and applying preserves hooks and skill
     DOOMER_HOME:join(home,'state'), DOOMER_BIN_DIR:join(home,'bin'), DOOMER_NATIVE_BINARY:'', DOOMER_DEV_INSTALL:'0'}});
 });
 
+test('CLI-only upgrade refuses a binary that would break installed Copilot hooks', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'doomer-cli-upgrade-copilot-'));
+  t.after(() => rm(home, {recursive:true, force:true}));
+  const { fileURLToPath } = await import('node:url');
+  await exec(process.execPath, [fileURLToPath(new URL('./fixtures/cli-upgrade.mjs', import.meta.url)), home, 'copilot'], {
+    env: { ...process.env, DOOMER_HOME: join(home, 'state'), DOOMER_BIN_DIR: join(home, 'bin'), DOOMER_NATIVE_BINARY: '', DOOMER_DEV_INSTALL: '0' },
+  });
+});
+
 test('exact release selection verifies downloads, stays pinned and preserves the active CLI on failure', async t => {
   const home = await mkdtemp(join(tmpdir(), 'doomer-cli-pin-'));
   t.after(() => rm(home, { recursive: true, force: true }));

@@ -66,6 +66,7 @@ Use explicit flags to make scripted installs independent of detection:
 
 ```sh
 npx @doomerlabs/doomer install --agent claude,codex --approve-uploads
+npx @doomerlabs/doomer install --agent copilot --approve-uploads
 npx @doomerlabs/doomer install --no-hooks
 ```
 
@@ -144,8 +145,9 @@ npx @doomerlabs/doomer update
 npx @doomerlabs/doomer revoke
 ```
 
-Hooks use global Claude `settings.json` and Codex `hooks.json`, respecting
-`CLAUDE_CONFIG_DIR` and `CODEX_HOME`. They call the persistent CLI by absolute
+Hooks use global Claude `settings.json`, Codex `hooks.json`, and Copilot CLI's
+`hooks/doomer-node.json`, respecting `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and
+`COPILOT_HOME` respectively. They call the persistent CLI by absolute
 path, independent of `PATH` and skill discovery. They execute the Go binary
 directly using `watch agent`; Node is only used for management commands.
 The Go hook reads saved upload approvals. It uses `DOOMER_API_URL` and
@@ -164,8 +166,17 @@ credentials from the service-specific configuration directory saved during onboa
 You can also run `doomer watch /path/to/workspace` directly. It watches until you
 stop it with Ctrl+C or SIGTERM and prints review results as JSON.
 
-Pre/post-tool hooks are not installed or invoked by this flow. Repair removes
-only this Node installer's old tool-hook entries, preserving other hooks.
+Copilot starts the watcher on prompt submission, registers edit targets before
+tools run, and delivers review instructions after a successful tool call.
+Its `agentStop` hook checks pending review work and `sessionEnd` cleans up.
+Start a fresh Copilot CLI session after setup. Local Copilot testing requires a
+matching Go build that advertises `watchCopilotHooks` in `runtime-info`.
+For a checkout-only development setup, run `onboard --agent copilot
+--copilot-project-hooks` inside the test checkout. Doomer writes the hook to
+`.github/hooks/doomer-node.json` and excludes it and its backups through Git's
+local exclude file. Launch Copilot as usual in that checkout and review the
+workspace trust prompt. The existing Doomer manager can reuse its saved upload
+approval for the same service.
 
 Clean trees with no diff do not submit reviews. Hooks never invent
 approval or modify native trust. Review/trust the definitions through the agent's

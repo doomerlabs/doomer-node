@@ -56,6 +56,26 @@ export async function supportsWatch(binary) {
   catch { return false; }
 }
 
+export async function supportsCopilot(binary) {
+  try {
+    const output = await run(binary, ['runtime-info'], { timeout: 5000, maxBytes: 16384 });
+    return JSON.parse(output).capabilities?.watchCopilotHooks === true;
+  } catch { return false; }
+}
+
+async function requireCopilotHooks(binary) {
+  if (!await supportsCopilot(binary)) throw new Error('GitHub Copilot hooks require a newer Doomer CLI with Copilot support.');
+}
+
+async function withStagedNative(bytes, use) {
+  const directory = await mkdtemp(join(tmpdir(), 'doomer-native-'));
+  try {
+    const path = join(directory, process.platform === 'win32' ? 'doomer.exe' : 'doomer');
+    await atomicWrite(path, bytes, 0o755);
+    return await use(path);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+}
+
 async function activateNative(native) {
   const executable = nativePath();
   const temporary = join(dirname(executable), `.doomer-${randomBytes(8).toString('hex')}`);
@@ -74,11 +94,12 @@ async function activateNative(native) {
   return { ...native, executable, onPath: (process.env.PATH || '').split(':').includes(dirname(executable)) };
 }
 
-async function installVersion(binary, version, source) {
+async function installVersion(binary, version, source, requireCopilot = false) {
   const sha256 = hash(binary);
   const suffix = source === 'local' ? 'dev' : version;
   if (!/^[a-z0-9][a-z0-9._-]*$/i.test(suffix)) throw new Error('Invalid native CLI version.');
   const path = join(dirname(nativePath()), `doomer-${suffix}`);
+  if (requireCopilot) await withStagedNative(binary, requireCopilotHooks);
   if (source === 'local') {
     const other = await otherState();
     if (other.native?.path === path && other.binaries?.[path]) throw new Error('The other installation uses doomer-dev. Keep production on a released binary before installing a separate development build.');
@@ -125,23 +146,23 @@ async function resolveNative({ update = false, version, packageMetadata = metada
   return { bytes: archiveBinary(archive), version: manifest.version, source };
 }
 
-export async function installNative(options) {
+export async function installNative(options = {}) {
   const native = await resolveNative(options);
+  const requireCopilot = options.requireCopilot || (await readState()).agents?.includes('copilot');
   if (native.cached) {
     const { bytes, cached, ...receipt } = native;
+    if (requireCopilot) await requireCopilotHooks(receipt.path);
     return activateNative({ ...receipt, watch: await supportsWatch(receipt.path) });
   }
-  return installVersion(native.bytes, native.version, native.source);
+  return installVersion(native.bytes, native.version, native.source, requireCopilot);
 }
 
 // Stage a verified candidate without changing the current installation. Go
 // commits the binary and settings after it has the required user decisions.
 export async function withNativeSetup(options, setup) {
   const native = await resolveNative({ ...options, update: true });
-  const temporary = await mkdtemp(join(tmpdir(), 'doomer-native-'));
-  try {
-    const path = join(temporary, process.platform === 'win32' ? 'doomer.exe' : 'doomer');
-    await atomicWrite(path, native.bytes, 0o755);
+  return withStagedNative(native.bytes, async path => {
+    if (options.requireCopilot || (await readState()).agents?.includes('copilot')) await requireCopilotHooks(path);
     const reported = (await run(path, ['--version'], { timeout: 5000 })).toString().trim();
     if (native.source !== 'local' && reported.split(/\s+/)[1] !== native.version) throw new Error('Native CLI version does not match the release manifest.');
     const help = await run(path, ['npm-setup', '--help'], { maxBytes: 16384, timeout: 5000 })
@@ -149,10 +170,8 @@ export async function withNativeSetup(options, setup) {
     if (!help.toString().includes('--release-sha256')) {
       throw new Error('This Doomer npm package requires a Go CLI with installer support.');
     }
-    return await setup({ path, version: native.version, source: native.source, sha256: hash(native.bytes) });
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
+    return setup({ path, version: native.version, source: native.source, sha256: hash(native.bytes) });
+  });
 }
 
 async function pinnedRelease(version) {
@@ -196,7 +215,7 @@ export async function upgradeNative({ check = false } = {}) {
   if (!check && available) {
     const archive = await download(asset.url, 64 * 1024 * 1024);
     if (hash(archive) !== asset.sha256) throw new Error('Native release checksum mismatch.');
-    await installVersion(archiveBinary(archive), manifest.version, 'stable');
+    await installVersion(archiveBinary(archive), manifest.version, 'stable', state.agents?.includes('copilot'));
   }
   return { state: available ? (check ? 'update_available' : 'updated') : 'current', currentVersion: current.version, latestVersion: manifest.version, manager: 'node' };
 }

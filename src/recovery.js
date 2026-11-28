@@ -25,7 +25,9 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
     } else add('cli_incompatible', 'This CLI does not support automatic review hooks.', managerCommand('update'));
   }
   for (const hook of result.hooks) {
-    if (hook.error) {
+    if (hook.conflict) {
+      add('hooks_conflict', hook.error, null, 'Inspect the two reported hook files and keep the configuration you intend to use.');
+    } else if (hook.error) {
       const failures = (hook.profiles || []).filter(p => p.error);
       if (!failures.length) failures.push(hook);
       for (const profile of failures) add('hook_config_invalid', `${hook.agent} settings could not be read at ${profile.file}: ${profile.error}`, null, `Fix the settings file at ${profile.file}, then run ${managerCommand('install-hooks', { agents: [hook.agent] })}.`);
@@ -44,11 +46,12 @@ export function installationGuidance(result, { api, uploadApproved, localNative 
   if (!result.onPath && result.commandInstalled) add('command_not_on_path', 'Your shell does not select this Doomer installation.', null, `Add ${result.globalCommand.slice(0, Math.max(result.globalCommand.lastIndexOf('/'), result.globalCommand.lastIndexOf('\\')))} to the front of PATH, or use ${shellQuote(result.globalCommand)} directly.`);
   const activation = agents.length ? 'unverified' : 'not_required';
   const next = issues.length ? `${issues[0].message} ${issues[0].command ? `Run: ${issues[0].command}. ` : ''}${issues[0].instruction || ''}`.trim()
-    : agents.length ? 'Open /hooks in your agent and review and trust the Doomer hooks. Start a new session if needed, then give the agent a small coding task. A completed review verifies activation.'
+    : agents.length === 1 && agents[0] === 'copilot' ? 'Start a fresh Copilot session, follow its trust prompts, then try a small coding task. A completed review verifies activation.'
+      : agents.length ? 'Open /hooks in your agent and review and trust the Doomer hooks. Start a new session if needed, then give the agent a small coding task. A completed review verifies activation.'
     : 'Standalone Quick review is not supported. Configure a coding-agent hook to enable Quick review.';
   const enableAutomaticReviews = agents.length ? undefined : {
     command: managerCommand('onboard', { api }),
-    instruction: 'Choose Codex, Claude Code, or both, review upload permission, then review and trust the hooks in your agent.',
+    instruction: 'Choose Codex, Claude Code, or GitHub Copilot CLI, review upload permission, then review and trust the hooks in your agent.',
   };
   const policyStates = result.codexReviewPolicy?.policies.map(p => p.state) || [];
   const reviewerAuthorization = {
