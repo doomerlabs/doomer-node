@@ -176,7 +176,8 @@ For a checkout-only development setup, run `onboard --agent copilot
 `.github/hooks/doomer-node.json` and excludes it and its backups through Git's
 local exclude file. Launch Copilot as usual in that checkout and review the
 workspace trust prompt. The existing Doomer manager can reuse its saved upload
-approval for the same service.
+approval for the same service. `update` and `install-hooks --agent copilot`
+repair the recorded hook locations, including checkout-only installations.
 
 Clean trees with no diff do not submit reviews. Hooks never invent
 approval or modify native trust. Review/trust the definitions through the agent's

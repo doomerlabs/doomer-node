@@ -125,7 +125,7 @@ export function formatSetup(result) {
   const pathIssue = result.issues.find(issue => issue.code === 'command_not_on_path');
   const setupIssues = result.issues.filter(issue => issue !== pathIssue);
   const copilot = result.agents.includes('copilot');
-  const copilotOnly = copilot && result.agents.length === 1;
+  const hookAgents = result.agents.filter(agent => agent !== 'copilot').map(agent => agentLabels[agent] || agent).join(' or ');
   for (const issue of setupIssues) {
     lines.push('', issue.message);
     if (issue.command) lines.push(`Run: ${issue.command}`);
@@ -138,14 +138,14 @@ export function formatSetup(result) {
     if (result.agents.includes('claude')) lines.push('     Claude Code: start a fresh session to load the hooks.');
     if (result.codexReload?.restartRequired) lines.push('     Codex: start a new session to load the hooks.');
     if (result.agents.includes('copilot')) lines.push('     GitHub Copilot CLI: start a fresh session to load the hooks.');
-    lines.push(copilotOnly ? '  2. Follow Copilot’s trust prompts for the checkout.' :
-      '  2. In that session, open /hooks in Codex or Claude Code, find Doomer, and trust its hooks.');
-    if (copilot && !copilotOnly) lines.push('     GitHub Copilot CLI: follow its trust prompts for the checkout.');
+    lines.push(hookAgents ? `  2. In that session, open /hooks in ${hookAgents}, find Doomer, and trust its hooks.` :
+      '  2. Follow Copilot’s trust prompts for the checkout.');
+    if (copilot && hookAgents) lines.push('     GitHub Copilot CLI: follow its trust prompts for the checkout.');
     lines.push('  3. Ask your agent to make a small code change. A completed review confirms setup.');
   } else if (result.ready && labels.length) {
-    lines.push('', copilotOnly ? 'After approving uploads, follow Copilot’s trust prompts for the checkout.' : 'After approving uploads, open /hooks in Codex or Claude Code and trust Doomer.');
+    lines.push('', hookAgents ? `After approving uploads, open /hooks in ${hookAgents} and trust Doomer.` : 'After approving uploads, follow Copilot’s trust prompts for the checkout.');
     if (result.agents.includes('claude')) lines.push('Claude Code: start a fresh session to load the hooks.');
-    if (result.agents.includes('copilot')) lines.push('GitHub Copilot CLI: start a fresh session to load the hooks.');
+    if (copilot) lines.push(hookAgents ? 'GitHub Copilot CLI: start a fresh session and follow its trust prompts for the checkout.' : 'GitHub Copilot CLI: start a fresh session to load the hooks.');
   } else if (!labels.length && result.enableAutomaticReviews) {
     lines.push('', 'Enable automatic reviews:', result.enableAutomaticReviews.command, result.enableAutomaticReviews.instruction);
   }

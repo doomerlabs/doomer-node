@@ -102,12 +102,19 @@ test('CLI-only upgrade check is read-only and applying preserves hooks and skill
 });
 
 test('CLI-only upgrade refuses a binary that would break installed Copilot hooks', async t => {
-  const home = await mkdtemp(join(tmpdir(), 'doomer-cli-upgrade-copilot-'));
-  t.after(() => rm(home, {recursive:true, force:true}));
   const { fileURLToPath } = await import('node:url');
-  await exec(process.execPath, [fileURLToPath(new URL('./fixtures/cli-upgrade.mjs', import.meta.url)), home, 'copilot'], {
-    env: { ...process.env, DOOMER_HOME: join(home, 'state'), DOOMER_BIN_DIR: join(home, 'bin'), DOOMER_NATIVE_BINARY: '', DOOMER_DEV_INSTALL: '0' },
-  });
+  for (const agents of ['copilot', 'codex,copilot']) {
+    await t.test(agents, async t => {
+      const home = await mkdtemp(join(tmpdir(), 'doomer-cli-upgrade-copilot-'));
+      t.after(() => rm(home, { recursive: true, force: true }));
+      await exec(process.execPath, [fileURLToPath(new URL('./fixtures/cli-upgrade.mjs', import.meta.url)), home, agents], {
+        env: { ...process.env, DOOMER_HOME: join(home, 'state'), DOOMER_BIN_DIR: join(home, 'bin'), DOOMER_NATIVE_BINARY: '', DOOMER_DEV_INSTALL: '0' },
+      });
+      const state = JSON.parse(await readFile(join(home, 'state', 'state.json'), 'utf8'));
+      assert.deepEqual(state.agents, agents.split(','));
+      assert.equal(state.native.version, '2026.11.1.1');
+    });
+  }
 });
 
 test('exact release selection verifies downloads, stays pinned and preserves the active CLI on failure', async t => {

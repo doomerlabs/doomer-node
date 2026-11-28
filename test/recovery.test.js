@@ -38,6 +38,21 @@ test('configured hooks do not imply upload consent or activation', () => {
 
 });
 
+test('setup and Doctor describe trust for the selected agents in a mixed Copilot installation', () => {
+  const state = installed();
+  state.agents.push('copilot');
+  state.hooks.push({ agent: 'copilot', file: '/tmp/copilot/hooks/doomer-node.json', configured: true, enabled: true });
+  const guidance = installationGuidance(state, { uploadApproved: true });
+  assert.match(guidance.next, /Open \/hooks in Codex/);
+  assert.match(guidance.next, /fresh Copilot session and follow its trust prompts/);
+  for (const uploadApproved of [true, false]) {
+    const formatted = formatSetup({ ...state, ...installationGuidance(state, { uploadApproved }) });
+    assert.match(formatted, /open \/hooks in Codex/);
+    assert.match(formatted, /GitHub Copilot CLI: follow its trust prompts|GitHub Copilot CLI: start a fresh session and follow its trust prompts/);
+    assert.doesNotMatch(formatted, /Claude Code/);
+  }
+});
+
 test('repair guidance distinguishes missing hooks, disabled hooks and invalid settings', () => {
   for (const [hook, code] of [
     [{ configured: false, enabled: true }, 'hooks_missing'],

@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { upgradeNative } from '../../src/native.js';
 const home=process.argv[2];
-const copilot=process.argv[3] === 'copilot';
+const agents = (process.argv[3] ?? 'codex').split(',');
+assert.ok(agents.every(agent => ['codex', 'copilot'].includes(agent)));
   await mkdir(join(home,'bin'),{recursive:true});await mkdir(join(home,'state'),{recursive:true});
   const old = Buffer.from('previous binary'); const oldPath=join(home,'bin','doomer-2026.11.1.1');await writeFile(oldPath,old);
   const hook=join(home,'hooks.json');const skill=join(home,'SKILL.md');await writeFile(hook,'original hooks');await writeFile(skill,'original skill');
   const hash=data=>createHash('sha256').update(data).digest('hex');
-  const initial={version:1,agents:[copilot ? 'copilot' : 'codex'],grants:[{scope:'global',api:'https://example.test/api'}],runtime:'/unchanged/manager.js',native:{path:oldPath,version:'2026.11.1.1',source:'stable',sha256:hash(old)},binaries:{[oldPath]:hash(old)}};
+  const initial={version:1,agents,grants:[{scope:'global',api:'https://example.test/api'}],runtime:'/unchanged/manager.js',native:{path:oldPath,version:'2026.11.1.1',source:'stable',sha256:hash(old)},binaries:{[oldPath]:hash(old)}};
   const statePath=join(home,'state','state.json');const before=JSON.stringify(initial);await writeFile(statePath,before);
   const binary=Buffer.from(`#!${process.execPath}\nconsole.log(process.argv.includes('--version') ? 'doomer 2026.11.2.1' : 'Watch recursively and review settled changes until stopped --manager-home --agent');\n`);
   const header=Buffer.alloc(512);header.write('doomer');header.write(binary.length.toString(8).padStart(11,'0')+'\0',124);header[156]=48;
@@ -20,12 +21,15 @@ const copilot=process.argv[3] === 'copilot';
   let archives=0;
   globalThis.fetch=async address=>{if(address.endsWith('stable.json'))return new Response(JSON.stringify({schema_version:1,version:'2026.11.2.1',assets:{[platform]:{url,sha256:hash(archive)}}}));archives++;assert.equal(address,url);return new Response(archive);};
   assert.equal((await upgradeNative({check:true})).state,'update_available');assert.equal(archives,0);assert.equal(await readFile(statePath,'utf8'),before);
-  if (copilot) {
+  if (agents.includes('copilot')) {
     await assert.rejects(upgradeNative(), /require a newer Doomer CLI with Copilot support/);
+    // Applying the update downloads one archive to probe the executable.
+    assert.equal(archives,1);
     assert.equal(await readFile(statePath,'utf8'),before);
-    assert.equal(await readFile(hook,'utf8'),'original hooks');
-    process.exit(0);
+    assert.deepEqual(await readdir(join(home,'bin')), ['doomer-2026.11.1.1']);
+    assert.deepEqual(await readFile(oldPath), old);
+  } else {
+    assert.equal((await upgradeNative()).state,'updated');assert.equal(archives,1);
+    const after=JSON.parse(await readFile(statePath,'utf8'));assert.deepEqual(after.agents,initial.agents);assert.deepEqual(after.grants,initial.grants);assert.equal(after.runtime,initial.runtime);
   }
-  assert.equal((await upgradeNative()).state,'updated');assert.equal(archives,1);
-  const after=JSON.parse(await readFile(statePath,'utf8'));assert.deepEqual(after.agents,initial.agents);assert.deepEqual(after.grants,initial.grants);assert.equal(after.runtime,initial.runtime);
   assert.equal(await readFile(hook,'utf8'),'original hooks');assert.equal(await readFile(skill,'utf8'),'original skill');

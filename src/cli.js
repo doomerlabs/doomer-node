@@ -79,6 +79,9 @@ export async function main(args) {
   if (options['copilot-project-hooks'] && (!['install', 'onboard'].includes(command) || options['no-hooks'])) {
     throw new Error('--copilot-project-hooks requires install or onboard with Copilot selected.');
   }
+  if (options['copilot-project-hooks'] && options.agent !== undefined && !options.agent.split(',').some(agent => agent.trim() === 'copilot')) {
+    throw new Error('--copilot-project-hooks requires selecting copilot.');
+  }
   if (extra.length) throw new Error('Unexpected command arguments. Run npx @doomerlabs/doomer --help.');
   switch (command) {
     case 'install':
